@@ -20,7 +20,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 
 ### CRITICA
 
-**C1. Parser de numero destroi valores com ponto decimal**
+[x] **C1. Parser de numero destroi valores com ponto decimal**
+- Corrigido em: `util/Validadores.java` (`numeroBR`), `ui/CadastrosView.java`, `ui/EquipeView.java`
 - `ui/CadastrosView.java:86-92` (`numero`), usado em `CadastrosView.java:40,65` e `ui/EquipeView.java:37,74`.
 - Descricao: `s.replace(".", "").replace(",", ".")` trata todo ponto como separador de milhar. Entrada no formato "americano" ou colada de planilha e multiplicada por 10^casas.
 - Cenario: cadastrar servico com valor `150.00` grava R$ 15.000,00; convenio `80.50` grava R$ 8.050,00; repasse `7.5` passa na validacao `0..100` do `EquipeView` e grava 75 %. O valor e copiado para cada atendimento (`service/AgendaService.java:57,59`), entao o erro contamina faturado, recebido e repasse sem aviso. Tambem aceita `NaN`/`Infinity`/`1e9` (`Double.parseDouble`), e `NaN` passa em `p < 0 || p > 100` (`EquipeView.java:38`).
@@ -40,13 +41,15 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Cenario: secretaria ou psicologo que saiu da clinica mantem acesso a agenda, dados cadastrais e exportacao de dados de todos os pacientes para sempre (LGPD art. 46: controle de acesso).
 - Correcao: `desativar(usuarioId)` restrito a psicologo, com auditoria; impedir desativar o ultimo psicologo; nao apagar (FK RESTRICT).
 
-**A3. Reativar atendimento cancelado burla a verificacao de conflito**
+[x] **A3. Reativar atendimento cancelado burla a verificacao de conflito**
+- Corrigido em: `model/StatusAtendimento.java` (`podeIrPara`), `service/AgendaService.java` (`alterarStatus`), `dao/AtendimentoDAO.java` (`buscar`)
 - `service/AgendaService.java:66-70` e `dao/AtendimentoDAO.java:53-55`.
 - Descricao: `alterarStatus` aceita qualquer transicao e nao revalida conflito. `contarConflitos` ignora CANCELADO (`AtendimentoDAO.java:68`).
 - Cenario: 14h cancelado; outro paciente e agendado as 14h; o usuario clica "Confirmar" no cancelado: dois atendimentos ativos no mesmo horario. Tambem permite REALIZADO -> AGENDADO, FALTOU -> REALIZADO etc., alterando faturamento retroativamente sem registrar o status anterior. `status` null causaria NPE (`status.name()`).
 - Correcao: maquina de estados explicita; ao sair de CANCELADO chamar `contarConflitos(..., id)`; registrar status anterior na auditoria.
 
-**A4. Updates "silenciosos" em id inexistente**
+[x] **A4. Updates "silenciosos" em id inexistente**
+- Corrigido em: `dao/AtendimentoDAO.java` (`executar`), `dao/PacienteDAO.java`, `dao/ConvenioDAO.java`, `dao/ServicoDAO.java`
 - `dao/AtendimentoDAO.java:126-131` (`executar` ignora o retorno de `executeUpdate`), `dao/PacienteDAO.java:39`, `dao/ConvenioDAO.java:25`, `dao/ServicoDAO.java:26`.
 - Cenario: `registrarPagamento(999, "PIX")` retorna sucesso e grava no log `PAGAMENTO atendimento 999` sem nada ter mudado. A auditoria passa a conter eventos que nao ocorreram.
 - Correcao: verificar `executeUpdate() == 1` e lancar `RegraNegocioException("Atendimento nao encontrado.")`.
@@ -100,7 +103,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - `service/PacienteService.java:53-63` (so arquivar), `schema.sql` (FK `ON DELETE RESTRICT`, triggers de delete). Detalhes na secao 3.5.
 - Correcao: `anonimizarPaciente(id)` (substitui nome/CPF/contatos por valores neutros mantendo id e vinculos financeiros), restrito a psicologo, apos `criado_em + 5 anos`, com auditoria; politica documentada.
 
-**M9. Datas e validacoes de agenda fracas**
+[x] **M9. Datas e validacoes de agenda fracas**
+- Corrigido em: `service/AgendaService.java` (janela de datas, `verificarConflitos`), `dao/AtendimentoDAO.java` (`contarConflitosPaciente`), `ui/AgendaView.java` (`montarInicio`, `diaSelecionado`), `service/Contexto.java` (`hoje`)
 - `service/AgendaService.java:25,35-37`, `ui/AgendaView.java:33-35,69,129-135`.
 - Descricao: aceita datas no passado e em anos absurdos; conflito checado so por profissional, nao por paciente (o mesmo paciente pode ser marcado em horarios sobrepostos); `data.getValue()` null (DatePicker limpo) causa NPE dentro de `executar`, exibido como "Erro inesperado: null"; `dia.getValue()` null em `AgendaView.carregar` (e nos botoes `<`/`>`) lanca NPE fora de `Ui.executar`, na thread JavaFX.
 - Correcao: validar `inicio` (janela razoavel; passado so com confirmacao), conflito por paciente, tratar DatePicker nulo.
@@ -123,7 +127,9 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - `service/AutenticacaoService.java:59`: usuario inexistente/inativo nao calcula PBKDF2, resposta muito mais rapida que senha errada (enumeracao por tempo). `cadastrar` verifica login duplicado (linha 29) antes de checar a sessao (linha 32). Impacto baixo em app desktop.
 
 **B6. Senha em memoria**
-- `PBEKeySpec` nunca chama `clearPassword()` (`util/Criptografia.java:108`), entao a copia interna do `char[]` permanece. A UI converte `String` -> `char[]` (`ui/TelaLogin.java:41`, `TrocaSenhaDialog.java:47`) e a `String` imutavel nao e zerada. `AutenticacaoService.cadastrar` nao zera a senha (so `entrar` e `trocarSenha` zeram). A `SecretKeySpec` da DEK permanece na `Sessao` apos `sair()` ate o GC. Mitigacao parcial; documentar.
+- [x] `PBEKeySpec` nunca chama `clearPassword()` (`util/Criptografia.java:108`), entao a copia interna do `char[]` permanece.
+  - Corrigido em: `util/Criptografia.java` (`pbkdf2`)
+- A UI converte `String` -> `char[]` (`ui/TelaLogin.java:41`, `TrocaSenhaDialog.java:47`) e a `String` imutavel nao e zerada. `AutenticacaoService.cadastrar` nao zera a senha (so `entrar` e `trocarSenha` zeram). A `SecretKeySpec` da DEK permanece na `Sessao` apos `sair()` ate o GC. Mitigacao parcial; documentar.
 
 **B7. Validacoes de paciente incompletas**
 - `service/PacienteService.java:25-51`: sem limite de tamanho de campos, telefone nao validado, `p == null` gera NPE, data de nascimento muito antiga aceita, `convenioId` inexistente cai em `DaoException` com mensagem de FK. A UI muta o objeto `Paciente` da tabela antes de validar (`ui/PacientesView.java:111-119`); se a validacao falha, a linha exibe dados nao salvos ate recarregar.
@@ -136,7 +142,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - `dao/AtendimentoDAO.java:76`, `dao/PacienteDAO.java:59`, `dao/UsuarioDAO.java:89`, `util/Database.java:59`: `rs.getInt(1)` sem `rs.next()` so funciona porque o sqlite-jdbc pre-posiciona o cursor; nao e portavel.
 - Conexao JDBC unica e nao sincronizada (`util/Database.java:30`): segura enquanto tudo roda na thread JavaFX; qualquer uso futuro de `Task`/thread de fundo (ex.: backup, PBKDF2 sem congelar a UI) causara corrida.
 - `dao/ConsentimentoDAO.java:47-53`: `vigente` carrega todo o historico a cada checagem; `ServicoDAO.buscar` lista tudo e filtra em memoria (irrelevante nesta escala).
-- `convenio.prazo_pagamento_dias` sem `CHECK` (aceita negativo).
+- [x] `convenio.prazo_pagamento_dias` sem `CHECK` (aceita negativo).
+  - Corrigido em: `resources/db/schema.sql` (CHECK), `util/Database.java` (migracao v2 com triggers para bancos existentes)
 
 ## 3. LGPD e prontuario (secao especifica)
 
@@ -152,7 +159,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 | Metadados | `paciente_id`, `profissional_id`, `atendimento_id`, `registrado_em`, `retifica_id` ficam em claro (revelam frequencia e cronologia). |
 
 ### 3.2 Vazamento em logs, toString e mensagens
-- Nenhum conteudo de prontuario aparece em log, exception ou `toString` hoje. **Risco latente**: `Evolucao` e um `record`, cujo `toString()` padrao imprimiria `texto`; se alguem passar a logar o objeto, o prontuario vai para o log. Sobrescrever `toString` em `model/Evolucao.java`.
+- [x] Nenhum conteudo de prontuario aparece em log, exception ou `toString` hoje. **Risco latente**: `Evolucao` e um `record`, cujo `toString()` padrao imprimiria `texto`; se alguem passar a logar o objeto, o prontuario vai para o log. Sobrescrever `toString` em `model/Evolucao.java`.
+  - Corrigido em: `model/Evolucao.java` (`toString` oculta o texto)
 - `Usuario.toString` (`Usuario.java:53-55`) mostra so nome/CRP; `Paciente.toString` so o nome. Hash/salt/chave nunca sao impressos.
 - `log_acesso` guarda apenas acao/entidade/id, sem conteudo (bom).
 - Mensagens: `Criptografia.java:102` e generica; `DaoException`/`BackupService` expoem mensagens do driver/caminhos (B1).
