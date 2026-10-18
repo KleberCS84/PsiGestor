@@ -22,21 +22,82 @@ financeiro com repasse, serviços/convênios e controles de LGPD.
 
 Os pontos legais estão em **[docs/PONTOS_DE_ATENCAO_LEGAIS.md](docs/PONTOS_DE_ATENCAO_LEGAIS.md)** e a modelagem do banco em **[docs/MODELAGEM.md](docs/MODELAGEM.md)**.
 
-## Como rodar (Windows)
+### Detalhes do que o código implementa
 
-Pré-requisitos: JDK 21 e Maven 3.9+.
+- **Perfis:** `PSICOLOGO` e `SECRETARIA`. Login com senha armazenada apenas como hash PBKDF2 + salt.
+- **Prontuário:** `ProntuarioService` registra evoluções cifradas com a chave do psicólogo (AES-256-GCM, IV novo a cada
+  registro). Triggers do SQLite bloqueiam `UPDATE` e `DELETE` em `evolucao`; correções são feitas por **retificação**
+  (novo registro apontando para o original). Registros de outro profissional aparecem como sigilosos e a secretária não
+  tem acesso.
+- **Agenda:** `AgendaService` checa conflito de horário, altera status, registra forma de pagamento e emissão de recibo;
+  cancelamento libera o horário.
+- **Pacientes:** `PacienteService` valida CPF e exige responsável legal para menores; paciente é arquivado, nunca excluído.
+- **Financeiro:** `FinanceiroService` calcula faturado, recebido, a receber, taxa de faltas e repasse por profissional
+  (percentual retido pela clínica).
+- **LGPD:** consentimentos com histórico (`CONTRATO_TERAPEUTICO`, `CONTATO_WHATSAPP_EMAIL`, `ATENDIMENTO_ONLINE`);
+  exportação dos dados do titular em TXT (art. 18, sem o conteúdo do prontuário); log de acesso imutável (triggers
+  bloqueiam alteração); backup consistente via `VACUUM INTO` (restrito ao psicólogo; o prontuário segue cifrado, mas os
+  dados cadastrais **não**, então guarde o backup em local protegido).
+
+## Pré-requisitos
+
+| Item | Versão | Observação |
+|---|---|---|
+| JDK | 21 (`maven.compiler.release` = 21) | Qualquer distribuição (Temurin, Oracle etc.) |
+| Maven | 3.9+ | Baixa JavaFX 21.0.5, sqlite-jdbc 3.46.1.3 e JUnit 5.11.3 automaticamente |
+| Banco de dados | SQLite embutido | Nada para instalar: o driver `sqlite-jdbc` cria o arquivo `.db` sozinho |
+
+Não há servidor, perfis Maven nem variáveis de ambiente a configurar.
+
+## Instalação e configuração
 
 ```powershell
+git clone <url-do-repositorio>
 cd psigestor
-mvn clean test        # roda os 19 testes automatizados
-mvn javafx:run        # abre o sistema
 ```
 
-No primeiro acesso, o sistema pede para cadastrar o **psicólogo responsável**.
-O banco é criado em `C:\Users\<voce>\PsiGestor\psigestor.db`.
+- **Banco de dados:** criado automaticamente em `<pasta do usuário>\PsiGestor\psigestor.db`
+  (ex.: `C:\Users\<voce>\PsiGestor\psigestor.db`, via `user.home`). O esquema (`resources/db/schema.sql`) é aplicado na
+  abertura e há migração por `PRAGMA user_version`. Arquivos `*.db` estão no `.gitignore`.
+- **Chaves de cifragem do prontuário:** não existe chave em arquivo, variável de ambiente ou código. Cada psicólogo
+  recebe uma chave de dados aleatória (AES-256) gravada no banco **cifrada** por uma chave derivada da senha dele
+  (PBKDF2-HMAC-SHA256, 210.000 iterações, criptografia de envelope). Basta definir a senha (mínimo de 8 caracteres) no
+  primeiro acesso, quando o sistema pede o cadastro do **psicólogo responsável**.
 
-> ⚠️ A chave do prontuário fica protegida pela senha. Dá para **trocar** a senha (menu lateral → Trocar senha) sem perder nada,
-> mas **perdeu a senha = perdeu o acesso aos registros.**
+> ⚠️ Dá para **trocar** a senha (menu lateral → Trocar senha) sem perder nada, mas **perdeu a senha = perdeu o acesso
+> aos registros do prontuário.** Nem a secretária nem quem copiar o `.db` consegue lê-los.
+
+## Como rodar
+
+```powershell
+mvn javafx:run        # abre o sistema (classe principal: br.com.kleber.psigestor.ui.PsiGestorApp)
+```
+
+Aplicação desktop JavaFX: não usa porta de rede. `ui.Launcher` é um ponto de entrada alternativo (classe que não estende
+`Application`), útil para empacotar em um `.jar` único.
+
+## Como rodar os testes
+
+```powershell
+mvn clean test        # JUnit 5 (maven-surefire-plugin 3.5.2); 49 testes em 6 classes, SQLite em memória
+```
+
+## Estrutura de pastas
+
+```
+psigestor/
+├── pom.xml
+├── docs/                      MODELAGEM.md, PONTOS_DE_ATENCAO_LEGAIS.md, contexto do projeto e capturas (img/)
+└── src/
+    ├── main/java/br/com/kleber/psigestor/
+    │   ├── ui/                JavaFX (PsiGestorApp, Launcher, telas)
+    │   ├── service/           regras de negócio + Contexto
+    │   ├── dao/               JDBC / SQL puro
+    │   ├── model/             entidades, enums, records
+    │   └── util/              Database, Criptografia, Validadores, Sessao
+    ├── main/resources/        db/schema.sql, ui/estilo.css
+    └── test/java/.../         service/ (PsiGestorTest, FinanceiroResumoTest), model/, util/
+```
 
 ## Arquitetura (camadas)
 
@@ -57,7 +118,19 @@ enums com comportamento (`StatusAtendimento.ocupaHorario()`), records para objet
 
 `PsiGestorTest` cobre: senha com hash, prontuário cifrado no banco, bloqueio de UPDATE/DELETE por trigger,
 retificação, secretária sem acesso, sigilo entre psicólogos, conflito de agenda, cancelamento liberando horário,
-troca de senha mantendo o prontuário legível, migração de banco antigo, consentimento para online, valor do convênio, menor sem responsável, CPF, exportação LGPD, resumo/repasse e backup.
+troca de senha mantendo o prontuário legível, migração de banco antigo, consentimento para online, valor do convênio, menor sem responsável, CPF, exportação LGPD, resumo/repasse e backup (19 testes).
+
+Testes unitários (30 testes):
+
+| Classe de teste | Testes | Cobre |
+|---|---|---|
+| `util/CriptografiaTest` | 11 | AES-GCM ida e volta, IV aleatório, chave errada e dado adulterado recusados, hash/salt de senha, envelope da chave de dados |
+| `util/ValidadoresTest` | 6 | CPF válido/inválido, `somenteDigitos`, `vazio` |
+| `model/AtendimentoTest` | 6 | conflito de horário, valores padrão, só `CANCELADO` libera horário |
+| `model/PacienteTest` | 4 | idade, maioridade, aniversário, nascimento nulo |
+| `service/FinanceiroResumoTest` | 3 | `taxaFaltas` |
+
+Total: 49 testes (`mvn clean test`).
 
 ## Próximos sprints (backlog)
 
