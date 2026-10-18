@@ -1,4 +1,5 @@
 # PsiGestor
+✅ N testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto (REVISAO.md, REVISAO_FINAL.md)
 
 Aplicação desktop para **gestão de consultório de psicologia**: agenda, pacientes, prontuário cifrado, financeiro com repasse, cadastros de serviços e convênios, equipe e controles de privacidade (LGPD).
 
