@@ -46,8 +46,10 @@ class ValidadoresTest {
     void numeroBRAceitaFormatosSemAmbiguidade() {
         assertEquals(0, new BigDecimal("150.00").compareTo(Validadores.numeroBR("150.00")));
         assertEquals(0, new BigDecimal("7.5").compareTo(Validadores.numeroBR("7.5")));
+        assertEquals(0, new BigDecimal("1.50").compareTo(Validadores.numeroBR("1.50")));
         assertEquals(0, new BigDecimal("80.50").compareTo(Validadores.numeroBR("80,50")));
         assertEquals(0, new BigDecimal("1234.56").compareTo(Validadores.numeroBR("1.234,56")));
+        assertEquals(0, new BigDecimal("1500.5").compareTo(Validadores.numeroBR("1.500,5")));
         assertEquals(0, new BigDecimal("1234567").compareTo(Validadores.numeroBR("1.234.567")));
         assertEquals(0, new BigDecimal("200").compareTo(Validadores.numeroBR(" 200 ")));
         assertEquals(0, BigDecimal.ZERO.compareTo(Validadores.numeroBR("")));
