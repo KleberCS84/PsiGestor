@@ -11,11 +11,13 @@ CREATE TABLE IF NOT EXISTS usuario (
     login           TEXT    NOT NULL UNIQUE,
     senha_hash      TEXT    NOT NULL,         -- PBKDF2, nunca a senha pura
     senha_salt      TEXT    NOT NULL,
-    chave_salt      TEXT    NOT NULL,         -- salt da chave que cifra o prontuario
+    chave_salt      TEXT    NOT NULL,         -- salt da chave de embrulho (KEK), derivada da senha
     papel           TEXT    NOT NULL CHECK (papel IN ('PSICOLOGO','SECRETARIA')),
     crp             TEXT,                     -- obrigatorio para PSICOLOGO (validado no service)
     percentual_repasse_clinica REAL NOT NULL DEFAULT 0 CHECK (percentual_repasse_clinica BETWEEN 0 AND 100),
-    ativo           INTEGER NOT NULL DEFAULT 1
+    ativo           INTEGER NOT NULL DEFAULT 1,
+    chave_cifrada   BLOB,                     -- chave do prontuario (DEK) cifrada pela KEK; so psicologo
+    chave_iv        BLOB
 );
 
 CREATE TABLE IF NOT EXISTS convenio (

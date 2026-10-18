@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -18,6 +19,14 @@ import java.util.List;
  */
 public class Database implements AutoCloseable {
 
+    /**
+     * Versao do esquema, gravada dentro do proprio arquivo .db (PRAGMA user_version).
+     * O schema.sql usa "CREATE TABLE IF NOT EXISTS", que NAO acrescenta colunas novas
+     * em um banco que ja existe. Por isso cada mudanca de estrutura vira um passo em migrar().
+     *  v1: usuario.chave_cifrada + usuario.chave_iv (criptografia de envelope / troca de senha)
+     */
+    static final int VERSAO_ESQUEMA = 1;
+
     private final Connection conexao;
 
     public Database(String url) {
@@ -27,6 +36,7 @@ public class Database implements AutoCloseable {
                 st.execute("PRAGMA foreign_keys = ON");   // SQLite vem com FK desligada!
             }
             criarEsquema();
+            migrar();
         } catch (SQLException e) {
             throw new IllegalStateException("Nao foi possivel abrir o banco: " + e.getMessage(), e);
         }
@@ -40,6 +50,40 @@ public class Database implements AutoCloseable {
                 st.execute(comando);
             }
         }
+    }
+
+    private void migrar() throws SQLException {
+        int versao;
+        try (Statement st = conexao.createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA user_version")) {
+            versao = rs.getInt(1);
+        }
+        if (versao >= VERSAO_ESQUEMA) return;
+
+        conexao.setAutoCommit(false);   // ou a migracao inteira entra, ou nada entra
+        try (Statement st = conexao.createStatement()) {
+            if (versao < 1) {
+                adicionarColunaSeFaltar(st, "usuario", "chave_cifrada", "BLOB");
+                adicionarColunaSeFaltar(st, "usuario", "chave_iv", "BLOB");
+            }
+            st.execute("PRAGMA user_version = " + VERSAO_ESQUEMA);
+            conexao.commit();
+        } catch (SQLException e) {
+            conexao.rollback();
+            throw e;
+        } finally {
+            conexao.setAutoCommit(true);
+        }
+    }
+
+    /** Banco novo ja nasce com a coluna (schema.sql); banco antigo ganha a coluna aqui. */
+    private void adicionarColunaSeFaltar(Statement st, String tabela, String coluna, String tipo) throws SQLException {
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info(" + tabela + ")")) {
+            while (rs.next()) {
+                if (rs.getString("name").equalsIgnoreCase(coluna)) return;
+            }
+        }
+        st.execute("ALTER TABLE " + tabela + " ADD COLUMN " + coluna + " " + tipo);
     }
 
     /** Divide o script: comando comum termina em ";", trigger termina em "END;". */

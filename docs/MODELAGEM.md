@@ -43,6 +43,18 @@ erDiagram
 | Regra de negócio no banco | Triggers `trg_evolucao_sem_update/delete` e `trg_log_sem_update/delete` |
 | Regra de negócio na aplicação | Conflito de horário, menor com responsável, CPF válido, online com consentimento (camada `service`) |
 
+## Chave do prontuário: criptografia de envelope (v1)
+
+| Coluna em `usuario` | O que guarda |
+|---|---|
+| `chave_salt` | salt para derivar a **KEK** (chave de embrulho) da senha com PBKDF2 |
+| `chave_cifrada` | a **DEK** (chave de dados que cifra o prontuário) cifrada com a KEK (AES-GCM) |
+| `chave_iv` | IV usado para cifrar a DEK |
+
+- Trocar a senha = desembrulhar a DEK com a senha antiga e embrulhar com a nova → **1 UPDATE em `usuario`**. A tabela `evolucao` não é tocada (os triggers continuam proibindo UPDATE).
+- Usuário criado antes da v1 tem `chave_cifrada = NULL`: no primeiro login, a chave antiga (derivada da senha) vira a DEK e é embrulhada.
+- Migração: o `Database` lê `PRAGMA user_version`; se for 0, adiciona as colunas com `ALTER TABLE` (dentro de uma transação) e grava `user_version = 1`.
+
 > Detalhe SQLite: chaves estrangeiras vêm **desligadas**; `Database` executa `PRAGMA foreign_keys = ON` ao conectar.
 
 ## Consulta de conflito de agenda (sobreposição de intervalos)

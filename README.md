@@ -28,14 +28,15 @@ Pré-requisitos: JDK 21 e Maven 3.9+.
 
 ```powershell
 cd psigestor
-mvn clean test        # roda os 16 testes automatizados
+mvn clean test        # roda os 19 testes automatizados
 mvn javafx:run        # abre o sistema
 ```
 
 No primeiro acesso, o sistema pede para cadastrar o **psicólogo responsável**.
 O banco é criado em `C:\Users\<voce>\PsiGestor\psigestor.db`.
 
-> ⚠️ A chave do prontuário é derivada da senha. **Perdeu a senha = perdeu o acesso aos registros.**
+> ⚠️ A chave do prontuário fica protegida pela senha. Dá para **trocar** a senha (menu lateral → Trocar senha) sem perder nada,
+> mas **perdeu a senha = perdeu o acesso aos registros.**
 
 ## Arquitetura (camadas)
 
@@ -56,11 +57,11 @@ enums com comportamento (`StatusAtendimento.ocupaHorario()`), records para objet
 
 `PsiGestorTest` cobre: senha com hash, prontuário cifrado no banco, bloqueio de UPDATE/DELETE por trigger,
 retificação, secretária sem acesso, sigilo entre psicólogos, conflito de agenda, cancelamento liberando horário,
-consentimento para online, valor do convênio, menor sem responsável, CPF, exportação LGPD, resumo/repasse e backup.
+troca de senha mantendo o prontuário legível, migração de banco antigo, consentimento para online, valor do convênio, menor sem responsável, CPF, exportação LGPD, resumo/repasse e backup.
 
 ## Próximos sprints (backlog)
 
-1. Troca de senha com recifragem dos registros do prontuário
+1. ~~Troca de senha~~ ✅ (criptografia de envelope)
 2. Edição/inativação de serviços, convênios e usuários
 3. Instalador Windows com `jpackage` (sem precisar de Maven)
 4. Relatórios em PDF (agenda do dia, extrato de repasse)

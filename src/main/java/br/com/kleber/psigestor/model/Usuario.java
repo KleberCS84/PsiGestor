@@ -7,6 +7,8 @@ public class Usuario {
     private String senhaHash;
     private String senhaSalt;
     private String chaveSalt;
+    private byte[] chaveCifrada;   // DEK embrulhada pela senha; null = formato antigo (antes da v1)
+    private byte[] chaveIv;
     private Papel papel;
     private String crp;
     private double percentualRepasseClinica;
@@ -35,6 +37,10 @@ public class Usuario {
     public void setSenhaSalt(String senhaSalt) { this.senhaSalt = senhaSalt; }
     public String getChaveSalt() { return chaveSalt; }
     public void setChaveSalt(String chaveSalt) { this.chaveSalt = chaveSalt; }
+    public byte[] getChaveCifrada() { return chaveCifrada; }
+    public void setChaveCifrada(byte[] chaveCifrada) { this.chaveCifrada = chaveCifrada; }
+    public byte[] getChaveIv() { return chaveIv; }
+    public void setChaveIv(byte[] chaveIv) { this.chaveIv = chaveIv; }
     public Papel getPapel() { return papel; }
     public void setPapel(Papel papel) { this.papel = papel; }
     public String getCrp() { return crp; }

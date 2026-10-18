@@ -15,7 +15,12 @@ import java.util.Base64;
 /**
  * Seguranca usando apenas a biblioteca padrao do Java (javax.crypto):
  *  - senha: PBKDF2-HMAC-SHA256 com salt aleatorio (nunca guardamos a senha);
- *  - prontuario: AES-256-GCM com chave derivada da senha do psicologo.
+ *  - prontuario: AES-256-GCM com uma CHAVE DE DADOS (DEK) propria de cada psicologo;
+ *  - a DEK fica gravada no banco "embrulhada" (cifrada) por uma CHAVE DE EMBRULHO (KEK)
+ *    derivada da senha. Isso se chama criptografia de envelope.
+ * Por que envelope? Trocar a senha so troca o embrulho da DEK (1 UPDATE em usuario);
+ * os registros do prontuario nao precisam ser recifrados - e nem poderiam, porque
+ * os triggers do banco proibem UPDATE em evolucao.
  * Consequencia importante: sem a senha do psicologo, o prontuario NAO pode ser lido
  * (nem pela secretaria, nem por quem copiar o arquivo .db).
  */
@@ -50,24 +55,49 @@ public final class Criptografia {
         return new SecretKeySpec(pbkdf2(senha, saltB64), "AES");
     }
 
+    /** Chave de dados (DEK) nova e aleatoria - nao depende de senha nenhuma. */
+    public static SecretKey novaChaveDados() {
+        byte[] k = new byte[TAM_CHAVE_BITS / 8];
+        RANDOM.nextBytes(k);
+        return new SecretKeySpec(k, "AES");
+    }
+
+    /** Cifra a DEK com a KEK. Retorna {iv, chaveCifrada}. */
+    public static byte[][] embrulharChave(SecretKey chaveDados, SecretKey chaveEmbrulho) {
+        return cifrarBytes(chaveDados.getEncoded(), chaveEmbrulho);
+    }
+
+    /** Recupera a DEK. Falha (tag GCM invalida) se a KEK veio de uma senha errada. */
+    public static SecretKey desembrulharChave(byte[] chaveCifrada, byte[] iv, SecretKey chaveEmbrulho) {
+        return new SecretKeySpec(decifrarBytes(chaveCifrada, iv, chaveEmbrulho), "AES");
+    }
+
     /** Retorna {iv, conteudoCifrado}. */
     public static byte[][] cifrar(String texto, SecretKey chave) {
+        return cifrarBytes(texto.getBytes(StandardCharsets.UTF_8), chave);
+    }
+
+    public static String decifrar(byte[] cifrado, byte[] iv, SecretKey chave) {
+        return new String(decifrarBytes(cifrado, iv, chave), StandardCharsets.UTF_8);
+    }
+
+    private static byte[][] cifrarBytes(byte[] dados, SecretKey chave) {
         try {
-            byte[] iv = new byte[TAM_IV];
+            byte[] iv = new byte[TAM_IV];   // IV novo a cada cifragem: nunca reutilizar IV no GCM
             RANDOM.nextBytes(iv);
             Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, chave, new GCMParameterSpec(TAM_TAG_BITS, iv));
-            return new byte[][] { iv, c.doFinal(texto.getBytes(StandardCharsets.UTF_8)) };
+            return new byte[][] { iv, c.doFinal(dados) };
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Falha ao cifrar", e);
         }
     }
 
-    public static String decifrar(byte[] cifrado, byte[] iv, SecretKey chave) {
+    private static byte[] decifrarBytes(byte[] cifrado, byte[] iv, SecretKey chave) {
         try {
             Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
             c.init(Cipher.DECRYPT_MODE, chave, new GCMParameterSpec(TAM_TAG_BITS, iv));
-            return new String(c.doFinal(cifrado), StandardCharsets.UTF_8);
+            return c.doFinal(cifrado);
         } catch (GeneralSecurityException e) {
             throw new RegraNegocioException("Nao foi possivel decifrar o registro (chave incorreta ou dado adulterado).");
         }

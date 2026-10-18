@@ -34,7 +34,7 @@ profissionais, serviços, convênios & TUSS, regras de repasse, aniversariantes,
 | Minimização (art. 6º, III) | CPF opcional; dica na tela de cadastro |
 | Direitos do titular — acesso e portabilidade (art. 18) | Botão **Exportar dados (LGPD)** → `PacienteService.exportarDadosDoTitular` |
 | Pedido de exclusão (art. 18, VI) × guarda obrigatória | Não há exclusão: a guarda decorre de obrigação regulatória (art. 16, I). Usa-se **arquivar** |
-| Segurança (art. 46) | Senha com PBKDF2 (210 mil iterações), prontuário cifrado, perfis de acesso, log de acesso imutável (triggers) |
+| Segurança (art. 46) | Senha com PBKDF2 (210 mil iterações), troca de senha sem recifrar nem expor o prontuário (criptografia de envelope), prontuário cifrado, perfis de acesso, log de acesso imutável (triggers) |
 | Incidente de segurança (art. 48) | Checklist na tela Privacidade. Regulamento de comunicação de incidentes da ANPD (Res. CD/ANPD nº 15/2024) |
 | Encarregado (DPO) | Verificar a Res. CD/ANPD nº 2/2022 (agentes de tratamento de pequeno porte): tratar dado sensível pode afastar a dispensa |
 

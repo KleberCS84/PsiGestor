@@ -16,8 +16,8 @@ public class UsuarioDAO {
     public Usuario inserir(Usuario u) {
         String sql = """
             INSERT INTO usuario (nome, login, senha_hash, senha_salt, chave_salt, papel, crp,
-                                 percentual_repasse_clinica, ativo)
-            VALUES (?,?,?,?,?,?,?,?,?)""";
+                                 percentual_repasse_clinica, ativo, chave_cifrada, chave_iv)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, u.getNome());
             ps.setString(2, u.getLogin());
@@ -28,6 +28,8 @@ public class UsuarioDAO {
             ps.setString(7, u.getCrp());
             ps.setDouble(8, u.getPercentualRepasseClinica());
             ps.setInt(9, u.isAtivo() ? 1 : 0);
+            ps.setBytes(10, u.getChaveCifrada());
+            ps.setBytes(11, u.getChaveIv());
             ps.executeUpdate();
             u.setId(JdbcUtil.ultimoId(ps));
             return u;
@@ -41,6 +43,22 @@ public class UsuarioDAO {
             ps.setInt(2, id);
             ps.executeUpdate();
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar repasse", e); }
+    }
+
+    /** Grava senha e embrulho da chave juntos: um unico UPDATE e atomico, nao fica "meio trocado". */
+    public void atualizarCredenciais(Usuario u) {
+        String sql = """
+            UPDATE usuario SET senha_hash = ?, senha_salt = ?, chave_salt = ?, chave_cifrada = ?, chave_iv = ?
+             WHERE id = ?""";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, u.getSenhaHash());
+            ps.setString(2, u.getSenhaSalt());
+            ps.setString(3, u.getChaveSalt());
+            ps.setBytes(4, u.getChaveCifrada());
+            ps.setBytes(5, u.getChaveIv());
+            ps.setInt(6, u.getId());
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new DaoException("Erro ao atualizar credenciais", e); }
     }
 
     public Optional<Usuario> buscarPorLogin(String login) {
@@ -80,6 +98,8 @@ public class UsuarioDAO {
         u.setSenhaHash(rs.getString("senha_hash"));
         u.setSenhaSalt(rs.getString("senha_salt"));
         u.setChaveSalt(rs.getString("chave_salt"));
+        u.setChaveCifrada(rs.getBytes("chave_cifrada"));
+        u.setChaveIv(rs.getBytes("chave_iv"));
         u.setPapel(Papel.valueOf(rs.getString("papel")));
         u.setCrp(rs.getString("crp"));
         u.setPercentualRepasseClinica(rs.getDouble("percentual_repasse_clinica"));

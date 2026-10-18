@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.service;
 
 import br.com.kleber.psigestor.model.*;
+import br.com.kleber.psigestor.util.Criptografia;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Validadores;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +11,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -52,6 +55,56 @@ class PsiGestorTest {
     void senhaNaoEhGuardadaEmTextoPuro() {
         Usuario u = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
         assertNotEquals("senhaForte1", u.getSenhaHash());
+    }
+
+    // ---------- troca de senha (criptografia de envelope) ----------
+    @Test
+    void trocaDeSenhaMantemProntuarioLegivel() {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro antes da troca");
+        ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "novaSenha22".toCharArray());
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        ctx.autenticacao.entrar("ana", "novaSenha22".toCharArray());
+        assertEquals("Registro antes da troca", ctx.prontuario.listar(joao.getId()).get(0).texto());
+        assertTrue(ctx.logs.ultimos(10).stream().anyMatch(l -> l.acao().equals("TROCA_SENHA")));
+    }
+
+    @Test
+    void trocaDeSenhaExigeSenhaAtualCorreta() {
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.autenticacao.trocarSenha("chuteErrado".toCharArray(), "novaSenha22".toCharArray()));
+        assertThrows(RegraNegocioException.class, () ->        // nova senha curta demais
+                ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "curta".toCharArray()));
+        ctx.sair();
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+    }
+
+    /** Simula o banco real criado antes desta versao: sem as colunas novas e prontuario com a chave antiga. */
+    @Test
+    void bancoAntigoEMigradoSemPerderProntuario() throws SQLException {
+        Usuario u = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        var chaveAntiga = Criptografia.derivarChave("senhaForte1".toCharArray(), u.getChaveSalt());
+        byte[][] ivECifrado = Criptografia.cifrar("Registro do MVP", chaveAntiga);
+        ctx.evolucoes.inserir(joao.getId(), null, ana.getId(), ivECifrado[1], ivECifrado[0], null);
+        ctx.close();
+
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (Connection con = DriverManager.getConnection(url); Statement st = con.createStatement()) {
+            st.execute("ALTER TABLE usuario DROP COLUMN chave_cifrada");
+            st.execute("ALTER TABLE usuario DROP COLUMN chave_iv");
+            st.execute("PRAGMA user_version = 0");
+        }
+
+        ctx = new Contexto(url);                                   // migracao roda aqui
+        assertNull(ctx.usuarios.buscarPorLogin("ana").orElseThrow().getChaveCifrada());
+        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()); // e aqui a chave e embrulhada
+        assertNotNull(ctx.usuarios.buscarPorLogin("ana").orElseThrow().getChaveCifrada());
+        assertEquals("Registro do MVP", ctx.prontuario.listar(joao.getId()).get(0).texto());
+
+        ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "novaSenha22".toCharArray());
+        ctx.sair();
+        ctx.autenticacao.entrar("ana", "novaSenha22".toCharArray());
+        assertEquals("Registro do MVP", ctx.prontuario.listar(joao.getId()).get(0).texto());
     }
 
     // ---------- prontuario ----------

@@ -46,12 +46,16 @@ public class TelaPrincipal {
                 item("Servicos & Convenios", () -> new CadastrosView(ctx).criar()),
                 item("Equipe & Repasse", () -> new EquipeView(ctx).criar()),
                 item("Privacidade (LGPD)", () -> new PrivacidadeView(ctx).criar()));
+        Button trocarSenha = new Button("Trocar senha");
+        trocarSenha.getStyleClass().add("menu-item");
+        trocarSenha.setMaxWidth(Double.MAX_VALUE);
+        trocarSenha.setOnAction(e -> new TrocaSenhaDialog(ctx).mostrar());
+        VBox.setMargin(trocarSenha, new Insets(20, 0, 0, 0));
         Button sair = new Button("Sair");
         sair.getStyleClass().add("menu-sair");
         sair.setMaxWidth(Double.MAX_VALUE);
         sair.setOnAction(e -> aoSair.run());
-        VBox.setMargin(sair, new Insets(20, 0, 0, 0));
-        menu.getChildren().add(sair);
+        menu.getChildren().addAll(trocarSenha, sair);
 
         raiz.setLeft(menu);
         botoes.get(0).fire();
