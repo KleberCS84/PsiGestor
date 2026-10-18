@@ -20,7 +20,7 @@ O objetivo técnico é mostrar um sistema com regras de negócio reais, em camad
 | **Painel** | Visão do dia: atendimentos, aguardando, aniversariantes, faturamento do mês, taxa de faltas, recibos pendentes |
 | **Agenda** | Agendamento com checagem de conflito (por profissional e por paciente), máquina de estados do atendimento, forma de pagamento, recibo; atendimento online exige consentimento registrado |
 | **Pacientes** | Cadastro com validação de CPF e telefone, responsável legal obrigatório para menores, consentimentos com histórico, arquivamento (sem exclusão), exportação de dados do titular, anonimização após o prazo de guarda |
-| **Prontuário** | Evoluções cifradas, append-only; correção só por retificação; registros de outro psicologo aparecem como sigilosos |
+| **Prontuário** | Evoluções cifradas, append-only; correção só por retificação; registros de outro psicólogo aparecem como sigilosos |
 | **Financeiro** | Faturado, recebido, a receber, faltas e repasse por profissional |
 | **Serviços & Convênios** | Serviços com código TUSS opcional; convênios com registro ANS e valor por sessão |
 | **Equipe & Repasse** | Usuários (psicólogo/secretaria), desativação e reativação, percentual retido pela clínica |
@@ -34,11 +34,11 @@ O objetivo técnico é mostrar um sistema com regras de negócio reais, em camad
 
 ![Pacientes](docs/img/3_pacientes.png)
 
-![Prontuario](docs/img/4_prontuario.png)
+![Prontuário](docs/img/4_prontuario.png)
 
 ![Financeiro](docs/img/5_financeiro.png)
 
-![Servicos e Convenios](docs/img/6_servicos.png)
+![Serviços e Convênios](docs/img/6_servicos.png)
 
 ![Equipe e Repasse](docs/img/7_equipe.png)
 
@@ -86,7 +86,7 @@ Detalhes completos em [docs/POLITICA_DADOS.md](docs/POLITICA_DADOS.md), [docs/RE
 - **Bloqueio de login e inatividade.** Após 5 falhas o login é bloqueado com espera progressiva (30 s dobrando, até 15 min). A sessão encerra após 10 minutos sem atividade. Login inexistente ou inativo paga o mesmo custo de PBKDF2 para dificultar enumeração por tempo de resposta. Senha nova exige no mínimo 12 caracteres.
 - **Backup cifrado `.psgb`.** Somente psicólogo. Gerado com `VACUUM INTO`, verificado com `PRAGMA integrity_check` e cifrado com AES-256-GCM, chave derivada de uma senha de backup (PBKDF2, 600.000 iterações, salt por arquivo, cabeçalho autenticado). A senha não é armazenada. A restauração valida senha, integridade e versão do esquema, e preserva uma cópia do banco anterior antes de substituí-lo.
 - **Anonimização após o prazo de guarda.** Somente psicólogo, apenas se a data de referência mais recente (último atendimento, último registro de prontuário ou cadastro) tiver mais de 5 anos, com confirmação digitando o nome. Remove nome, CPF, nascimento, telefone, e-mail, contato de emergência, responsável legal e número da carteirinha. O paciente é arquivado e não pode mais ser editado, desarquivado nem agendado. Mantém convênio, vínculos financeiros, consentimentos e o prontuário cifrado. É irreversível no sistema e auditada.
-- **Dinheiro em centavos.** Valores trafegam como `long` do schema à UI; o repasse usa `BigDecimal` com `HALF_EVEN`, e parte da clínica mais líquido sempre fecham com o bruto.
+- **Dinheiro em centavos.** Valores trafegam como `long` do schema à UI; o repasse usa `BigDecimal` com `HALF_EVEN`, e a parte da clínica e o valor líquido sempre somam o valor bruto.
 - **Exportação do titular.** TXT restrito ao psicólogo, com nome não previsível e sem sobrescrever arquivos existentes, auditada.
 - **Erros e logs técnicos.** O usuário vê mensagens genéricas; o log técnico em `~/PsiGestor/logs` guarda apenas classe e pilha.
 
