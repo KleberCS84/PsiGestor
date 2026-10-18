@@ -72,11 +72,14 @@ public class PacienteService {
     }
 
     public List<Paciente> aniversariantes(LocalDate dia) {
+        ctx.exigirSessao();
         return ctx.pacientes.pesquisar("", false).stream().filter(p -> p.fazAniversarioEm(dia)).toList();
     }
 
     public void registrarConsentimento(int pacienteId, TipoConsentimento tipo, boolean concedido, String obs) {
         ctx.exigirSessao();
+        if (tipo == null) throw new RegraNegocioException("Informe o tipo de consentimento.");
+        buscar(pacienteId);   // paciente inexistente: mensagem clara em vez de erro de FK
         ctx.consentimentos.registrar(pacienteId, tipo, concedido, obs);
         ctx.auditar((concedido ? "CONSENTIMENTO_" : "REVOGACAO_") + tipo.name(), "paciente", pacienteId);
     }

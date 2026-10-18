@@ -83,7 +83,7 @@ public class PacientesView {
         resp.setPromptText("obrigatorio se menor de 18");
         ComboBox<Convenio> conv = new ComboBox<>();
         conv.getItems().add(null);
-        conv.getItems().addAll(ctx.convenios.listar());
+        conv.getItems().addAll(ctx.cadastros.listarConvenios());
         conv.getItems().stream().filter(c -> c != null && Objects.equals(c.getId(), p.getConvenioId()))
                 .findFirst().ifPresent(conv::setValue);
         conv.setPromptText("Particular");

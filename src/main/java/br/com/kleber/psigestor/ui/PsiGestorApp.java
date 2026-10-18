@@ -1,10 +1,16 @@
 package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.service.Contexto;
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.input.InputEvent;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +19,7 @@ public class PsiGestorApp extends Application {
 
     private Contexto ctx;
     private Stage palco;
+    private Timeline inatividade;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -34,13 +41,32 @@ public class PsiGestorApp extends Application {
     }
 
     void mostrarPrincipal() {
-        trocar(new TelaPrincipal(ctx, () -> { ctx.sair(); mostrarLogin(); }).criar());
+        Scene cena = trocar(new TelaPrincipal(ctx, () -> { pararInatividade(); ctx.sair(); mostrarLogin(); }).criar());
+        // qualquer tecla/clique conta como atividade; a cada 15 s verifica se passou do limite
+        cena.addEventFilter(InputEvent.ANY, e -> ctx.registrarAtividade());
+        inatividade = new Timeline(new KeyFrame(Duration.seconds(15), e -> {
+            // getSessao() == null: ja encerrada por registrarAtividade/exigirSessao
+            if (ctx.sairSeInativo() || ctx.getSessao() == null) {
+                pararInatividade();
+                mostrarLogin();
+                // dialogo modal nao pode abrir dentro do tratador da animacao
+                Platform.runLater(() -> Ui.info("Sessao encerrada por inatividade."));
+            }
+        }));
+        inatividade.setCycleCount(Animation.INDEFINITE);
+        inatividade.play();
     }
 
-    private void trocar(Parent raiz) {
+    private void pararInatividade() {
+        if (inatividade != null) inatividade.stop();
+        inatividade = null;
+    }
+
+    private Scene trocar(Parent raiz) {
         Scene cena = new Scene(raiz, 1180, 720);
         cena.getStylesheets().add(getClass().getResource("/ui/estilo.css").toExternalForm());
         palco.setScene(cena);
+        return cena;
     }
 
     @Override

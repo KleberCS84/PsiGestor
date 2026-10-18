@@ -22,6 +22,7 @@ public class PrivacidadeView {
         log.getColumns().add(Ui.col("Acao", LogAcesso::acao, 220));
         log.getColumns().add(Ui.col("Entidade", LogAcesso::entidade, 110));
         log.getColumns().add(Ui.col("Id", LogAcesso::entidadeId, 60));
+        log.getColumns().add(Ui.col("Detalhe", LogAcesso::detalhe, 180));
         log.getItems().setAll(ctx.logs.ultimos(300));
 
         Button backup = new Button("Gerar backup agora");

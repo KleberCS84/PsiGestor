@@ -18,6 +18,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -317,5 +319,235 @@ class PsiGestorTest {
     void backupGeraArquivo() {
         Path b = ctx.backup.gerar(tmp.resolve("backups"));
         assertTrue(Files.exists(b));
+    }
+
+    // ---------- A1: servicos, convenios e repasse via service ----------
+    @Test
+    void secretariaNaoAlteraServicoConvenioNemRepasse() {
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray());
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 10)));
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.cadastros.salvarConvenio(new Convenio("Barato", null, 1, 30)));
+        assertThrows(RegraNegocioException.class, () -> ctx.cadastros.atualizarRepasse(ana.getId(), 0));
+        assertFalse(ctx.cadastros.listarServicos().isEmpty());   // ver continua permitido
+    }
+
+    @Test
+    void psicologoAlteraCadastrosComAuditoria() {
+        ctx.cadastros.salvarServico(new Servico("Avaliacao", "50000470", 50, 250));
+        Convenio c = ctx.cadastros.salvarConvenio(new Convenio("Unimed Teste", "123456", 90, 30));
+        ctx.cadastros.salvarConvenio(c);
+        ctx.cadastros.atualizarRepasse(ana.getId(), 40);
+        var acoes = ctx.logs.ultimos(10).stream().map(l -> l.acao()).toList();
+        assertTrue(acoes.containsAll(List.of("CADASTRO_SERVICO", "CADASTRO_CONVENIO", "ALTERACAO_CONVENIO",
+                "ALTERACAO_REPASSE")));
+        assertEquals(40, ctx.usuarios.buscarPorLogin("ana").orElseThrow().getPercentualRepasseClinica());
+    }
+
+    @Test
+    void repasseInvalidoOuDeUsuarioInexistenteERecusadoSemAuditar() {
+        assertThrows(RegraNegocioException.class, () -> ctx.cadastros.atualizarRepasse(ana.getId(), 150));
+        assertThrows(RegraNegocioException.class, () -> ctx.cadastros.atualizarRepasse(999, 10));
+        assertTrue(ctx.logs.ultimos(10).stream().noneMatch(l -> l.acao().equals("ALTERACAO_REPASSE")));
+    }
+
+    @Test
+    void cadastrosExigemSessao() {
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 10)));
+        assertThrows(RegraNegocioException.class, () -> ctx.cadastros.listarConvenios());
+    }
+
+    // ---------- A2: desativar usuario ----------
+    @Test
+    void psicologoDesativaUsuarioSemApagar() {
+        Usuario bia = ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.desativar(bia.getId());
+        assertTrue(ctx.logs.ultimos(5).stream().anyMatch(l -> l.acao().equals("DESATIVACAO_USUARIO")));
+        assertFalse(ctx.usuarios.buscar(bia.getId()).orElseThrow().isAtivo());   // registro continua no banco
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(bia.getId()));   // ja inativo
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray()));
+    }
+
+    @Test
+    void secretariaNaoDesativaNinguem() {
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray());
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(ana.getId()));
+        assertTrue(ctx.usuarios.buscar(ana.getId()).orElseThrow().isAtivo());
+    }
+
+    @Test
+    void naoDesativaPropriaContaNemUltimoPsicologo() {
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(ana.getId()));
+        Usuario carlos = ctx.autenticacao.cadastrar("Carlos", "carlos", "senhaCarlos1".toCharArray(), Papel.PSICOLOGO, "09/999", 30);
+        ctx.autenticacao.entrar("carlos", "senhaCarlos1".toCharArray());
+        ctx.autenticacao.desativar(ana.getId());
+        // sessao antiga da Ana (ex.: outra instancia aberta no mesmo arquivo) tenta tirar o ultimo psicologo
+        ctx.setSessao(new br.com.kleber.psigestor.util.Sessao(ana, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(carlos.getId()));
+        assertTrue(ctx.usuarios.buscar(carlos.getId()).orElseThrow().isAtivo());
+    }
+
+    // ---------- M1: tentativas de login e inatividade ----------
+    @Test
+    void cincoFalhasBloqueiamAteASenhaCerta() {
+        RelogioAjustavel r = relogioAjustavel();
+        ctx.sair();
+        for (int i = 0; i < 5; i++)
+            assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        var e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertTrue(e.getMessage().contains("Muitas tentativas"));
+        assertTrue(ctx.logs.ultimos(3).stream().anyMatch(l -> l.acao().equals("LOGIN_BLOQUEADO")));
+        r.avancar(Duration.ofSeconds(30));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+    }
+
+    @Test
+    void bloqueioDobraACadaNovaFalha() {
+        RelogioAjustavel r = relogioAjustavel();
+        ctx.sair();
+        for (int i = 0; i < 5; i++)
+            assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        r.avancar(Duration.ofSeconds(30));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray())); // 6a: 60 s
+        r.avancar(Duration.ofSeconds(30));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        r.avancar(Duration.ofSeconds(30));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+    }
+
+    @Test
+    void loginCertoZeraContadorDeFalhas() {
+        ctx.sair();
+        for (int i = 0; i < 4; i++)
+            assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray());
+        ctx.sair();
+        for (int i = 0; i < 4; i++)
+            assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+    }
+
+    @Test
+    void falhaDeLoginRegistraLoginTentado() {
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar(" fantasma ", "x".toCharArray()));
+        var log = ctx.logs.ultimos(2);
+        assertEquals("LOGIN_FALHOU", log.get(0).acao());
+        assertEquals("login inexistente", log.get(0).detalhe());
+        assertEquals("-", log.get(0).usuario());
+        assertEquals("login=ana", log.get(1).detalhe());
+        assertEquals("Ana Souza", log.get(1).usuario());
+    }
+
+    @Test
+    void senhaDigitadaNoCampoLoginNaoVaiParaOLog() {
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("senhaForte1", "x".toCharArray()));
+        var l = ctx.logs.ultimos(1).get(0);
+        assertEquals("login inexistente", l.detalhe());
+        assertFalse(l.detalhe().contains("senhaForte1"));
+    }
+
+    @Test
+    void dezMinutosSemAtividadeEncerramASessao() {
+        RelogioAjustavel r = relogioAjustavel();
+        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.pesquisar("", false));
+        assertNull(ctx.getSessao());
+        assertTrue(ctx.logs.ultimos(3).stream().anyMatch(l -> l.acao().equals("LOGOUT_INATIVIDADE")));
+    }
+
+    @Test
+    void atividadeAdiaOLogoutAutomatico() {
+        RelogioAjustavel r = relogioAjustavel();
+        r.avancar(Duration.ofMinutes(9));
+        ctx.registrarAtividade();
+        r.avancar(Duration.ofMinutes(9));
+        assertFalse(ctx.sairSeInativo());
+        assertDoesNotThrow(() -> ctx.pacienteService.pesquisar("", false));
+        r.avancar(Duration.ofMinutes(10));
+        ctx.registrarAtividade();                 // clique depois do limite nao revive a sessao
+        assertNull(ctx.getSessao());
+    }
+
+    @Test
+    void bancoV2GanhaColunaDetalheNoLog() throws SQLException {
+        ctx.close();
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (Connection con = DriverManager.getConnection(url); Statement st = con.createStatement()) {
+            st.execute("ALTER TABLE log_acesso DROP COLUMN detalhe");
+            st.execute("PRAGMA user_version = 2");
+        }
+        ctx = new Contexto(url);
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
+        assertEquals("login=ana", ctx.logs.ultimos(1).get(0).detalhe());
+    }
+
+    // ---------- B8: validacoes de consentimento/pagamento e leituras com sessao ----------
+    @Test
+    void consentimentoExigeTipoEPacienteExistente() {
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.pacienteService.registrarConsentimento(joao.getId(), null, true, "x"));
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.pacienteService.registrarConsentimento(999, TipoConsentimento.ATENDIMENTO_ONLINE, true, "x"));
+    }
+
+    @Test
+    void formaDePagamentoInvalidaERecusada() {
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 13, 8, 0), Modalidade.PRESENCIAL, false);
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(a.getId(), "Bitcoin"));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(a.getId(), null));
+        assertFalse(ctx.atendimentos.buscar(a.getId()).orElseThrow().isPago());
+    }
+
+    @Test
+    void naoPagaCanceladoNemPagaDuasVezes() {
+        Atendimento cancelado = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 13, 8, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(cancelado.getId(), StatusAtendimento.CANCELADO);
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(cancelado.getId(), "PIX"));
+
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 13, 9, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.registrarPagamento(a.getId(), "PIX");
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(a.getId(), "Dinheiro"));
+        assertEquals("PIX", ctx.atendimentos.buscar(a.getId()).orElseThrow().getFormaPagamento());
+    }
+
+    @Test
+    void leiturasDeAgendaEAniversariantesExigemSessao() {
+        LocalDate dia = LocalDate.of(2026, 10, 13);
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.doDia(dia, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.periodo(dia, dia, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.aniversariantes(dia));
+    }
+
+    /** Troca o relogio fixo por um que o teste pode avancar (comeca no mesmo instante). */
+    private RelogioAjustavel relogioAjustavel() {
+        RelogioAjustavel r = new RelogioAjustavel(ctx.agora(), ZoneId.systemDefault());
+        ctx.setRelogio(r);
+        return r;
+    }
+
+    private static final class RelogioAjustavel extends Clock {
+        private Instant agora;
+        private final ZoneId zona;
+
+        RelogioAjustavel(Instant agora, ZoneId zona) { this.agora = agora; this.zona = zona; }
+
+        void avancar(Duration d) { agora = agora.plus(d); }
+
+        @Override public ZoneId getZone() { return zona; }
+        @Override public Clock withZone(ZoneId z) { return new RelogioAjustavel(agora, z); }
+        @Override public Instant instant() { return agora; }
     }
 }

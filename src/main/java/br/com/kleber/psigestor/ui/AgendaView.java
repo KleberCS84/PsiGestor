@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.model.*;
+import br.com.kleber.psigestor.service.AgendaService;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import javafx.scene.Node;
@@ -27,7 +28,7 @@ public class AgendaView {
 
     public Node criar() {
         filtroProf.getItems().add(null);
-        filtroProf.getItems().addAll(ctx.usuarios.listarPsicologos());
+        filtroProf.getItems().addAll(ctx.cadastros.listarPsicologos());
         filtroProf.setPromptText("Todos os profissionais");
         dia.setOnAction(e -> carregar());
         filtroProf.setOnAction(e -> carregar());
@@ -82,8 +83,7 @@ public class AgendaView {
     }
 
     private void pagamento(Atendimento a) {
-        ChoiceDialog<String> d = new ChoiceDialog<>("PIX", List.of("PIX", "Dinheiro", "Cartao de debito",
-                "Cartao de credito", "Transferencia", "Convenio"));
+        ChoiceDialog<String> d = new ChoiceDialog<>("PIX", AgendaService.FORMAS_PAGAMENTO);
         d.setHeaderText("Pagamento de " + a.getPacienteNome() + " - " + Ui.moeda(a.getValor()));
         d.setTitle("Registrar pagamento");
         d.showAndWait().ifPresent(forma -> Ui.executar(() -> ctx.agenda.registrarPagamento(a.getId(), forma)));
@@ -93,10 +93,10 @@ public class AgendaView {
         ComboBox<Paciente> paciente = new ComboBox<>();
         paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
         ComboBox<Usuario> prof = new ComboBox<>();
-        prof.getItems().setAll(ctx.usuarios.listarPsicologos());
+        prof.getItems().setAll(ctx.cadastros.listarPsicologos());
         if (ctx.getSessao().usuario().isPsicologo()) prof.setValue(ctx.getSessao().usuario());
         ComboBox<Servico> servico = new ComboBox<>();
-        servico.getItems().setAll(ctx.servicos.listar());
+        servico.getItems().setAll(ctx.cadastros.listarServicos());
         if (!servico.getItems().isEmpty()) servico.setValue(servico.getItems().get(0));
         DatePicker data = new DatePicker(dia.getValue());
         TextField hora = new TextField("08:00");

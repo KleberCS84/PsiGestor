@@ -29,13 +29,15 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 
 ### ALTA
 
-**A1. Servicos, convenios e repasse sem checagem de sessao/papel nem auditoria**
+[x] **A1. Servicos, convenios e repasse sem checagem de sessao/papel nem auditoria**
+- Corrigido em: `service/CadastroService.java` (novo), `service/Contexto.java`, `dao/UsuarioDAO.java` (`atualizarRepasse`), `ui/CadastrosView.java`, `ui/EquipeView.java`, `ui/AgendaView.java`, `ui/PacientesView.java`
 - `ui/CadastrosView.java:39,64` (`ctx.servicos.salvar`, `ctx.convenios.salvar`), `ui/EquipeView.java:39` (`ctx.usuarios.atualizarRepasse`).
 - Descricao: nao existe service para essas operacoes; a UI chama o DAO. `EquipeView` desabilita o botao para secretaria (linha 32), mas `CadastrosView` nao restringe nada, e servico/convenio definem o valor cobrado.
 - Cenario: a secretaria altera valor/convenio e nada fica na trilha de auditoria; qualquer outra tela futura (ou codigo) que chame o DAO contorna a regra. Alterar % de repasse (dinheiro entre profissionais) nao e auditado.
 - Correcao: criar service com `exigirSessao()`, regra de papel e `auditar(...)`; DAOs nao devem ser acessados pela UI.
 
-**A2. Impossivel desativar/revogar usuario**
+[x] **A2. Impossivel desativar/revogar usuario**
+- Corrigido em: `service/AutenticacaoService.java` (`desativar`), `dao/UsuarioDAO.java` (`desativar`, `buscar`, `contarPsicologosAtivos`), `ui/EquipeView.java`
 - `dao/UsuarioDAO.java` (nenhum `UPDATE ... ativo`), `service/AutenticacaoService.java` (sem metodo), `ui/EquipeView.java` (sem botao). Busca por `setAtivo` so acha o mapeador do DAO.
 - Descricao: `entrar` filtra por `isAtivo` (`AutenticacaoService.java:57`), mas nada grava `ativo = 0`.
 - Cenario: secretaria ou psicologo que saiu da clinica mantem acesso a agenda, dados cadastrais e exportacao de dados de todos os pacientes para sempre (LGPD art. 46: controle de acesso).
@@ -62,11 +64,14 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 
 ### MEDIA
 
-**M1. Sem limite de tentativas, sem bloqueio por inatividade; sessao nunca expira**
+[x] **M1. Sem limite de tentativas, sem bloqueio por inatividade; sessao nunca expira**
+- Corrigido em: `service/AutenticacaoService.java` (bloqueio por login), `service/Contexto.java` (inatividade), `ui/PsiGestorApp.java` (temporizador), `dao/LogAcessoDAO.java`, `model/LogAcesso.java`, `ui/PrivacidadeView.java`, `resources/db/schema.sql` + `util/Database.java` (migracao v3: `log_acesso.detalhe`)
 - `service/AutenticacaoService.java:54-71`, `service/Contexto.java:53-69`, `util/Sessao.java`.
 - Descricao: o login pode ser tentado indefinidamente; a falha e auditada com `usuario_id = null` e sem o login tentado (linha 60), entao a trilha nao permite identificar a conta atacada. A sessao (com a DEK em memoria) dura ate "Sair".
 - Cenario: computador deixado logado em consultorio compartilhado exibe o prontuario a qualquer pessoa (sigilo, Codigo de Etica art. 9).
 - Correcao: atraso exponencial/bloqueio temporario por login; temporizador de inatividade que chama `ctx.sair()`; registrar o login tentado no log.
+- Como ficou no log: `log_acesso.detalhe` grava `login=<login cadastrado>` (maximo 40 caracteres) quando o login existe, e so `login inexistente` quando nao existe, nunca o texto digitado (pode ser a senha digitada no campo errado).
+- Limite conhecido: o contador de tentativas fica em memoria; fechar e reabrir o app zera o bloqueio. Nao protege contra ataque offline ao arquivo `.db`.
 
 **M2. Auditoria nao e atomica com a operacao**
 - `service/ProntuarioService.java:41-43`, `service/PacienteService.java:48-49`, `service/AgendaService.java:61-62` e demais (nenhuma usa transacao; `Database` mantem `autoCommit=true`).
@@ -134,7 +139,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 **B7. Validacoes de paciente incompletas**
 - `service/PacienteService.java:25-51`: sem limite de tamanho de campos, telefone nao validado, `p == null` gera NPE, data de nascimento muito antiga aceita, `convenioId` inexistente cai em `DaoException` com mensagem de FK. A UI muta o objeto `Paciente` da tabela antes de validar (`ui/PacientesView.java:111-119`); se a validacao falha, a linha exibe dados nao salvos ate recarregar.
 
-**B8. Entradas sem validacao em consentimento/pagamento; leituras sem sessao**
+[x] **B8. Entradas sem validacao em consentimento/pagamento; leituras sem sessao**
+- Corrigido em: `service/PacienteService.java` (`registrarConsentimento`, `aniversariantes`), `service/AgendaService.java` (`registrarPagamento`, `FORMAS_PAGAMENTO`, `doDia`, `periodo`), `ui/AgendaView.java`
 - `service/PacienteService.java:78-82` (`tipo == null` -> NPE; paciente inexistente -> `DaoException` de FK), `service/AgendaService.java:72-76` (forma de pagamento livre/nula; pagar atendimento cancelado ou ja pago sobrescreve a forma; pagamento so e contabilizado para REALIZADO, `FinanceiroService.java:34-37`). `PacienteService.aniversariantes` (linha 74) e `AgendaService.doDia/periodo` (85-91) nao chamam `exigirSessao()`.
 
 **B9. Detalhes menores**

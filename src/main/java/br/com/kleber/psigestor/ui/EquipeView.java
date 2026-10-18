@@ -3,7 +3,6 @@ package br.com.kleber.psigestor.ui;
 import br.com.kleber.psigestor.model.Papel;
 import br.com.kleber.psigestor.model.Usuario;
 import br.com.kleber.psigestor.service.Contexto;
-import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Validadores;
 import javafx.event.ActionEvent;
 import javafx.scene.Node;
@@ -23,6 +22,7 @@ public class EquipeView {
         tabela.getColumns().add(Ui.col("CRP", Usuario::getCrp, 100));
         tabela.getColumns().add(Ui.col("% retido pela clinica", u -> u.isPsicologo()
                 ? String.format("%.1f%%", u.getPercentualRepasseClinica()) : "-", 150));
+        tabela.getColumns().add(Ui.col("Situacao", u -> u.isAtivo() ? "Ativo" : "Inativo", 90));
 
         boolean psicologo = ctx.getSessao().usuario().isPsicologo();
         Button novo = new Button("+ Novo usuario");
@@ -34,21 +34,26 @@ public class EquipeView {
         repasse.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
             TextInputDialog d = new TextInputDialog(String.valueOf(u.getPercentualRepasseClinica()));
             d.setHeaderText("Percentual retido pela clinica sobre as sessoes de " + u.getNome());
-            d.showAndWait().ifPresent(t -> Ui.executar(() -> {
-                double p = Validadores.numeroBR(t).doubleValue();
-                if (p < 0 || p > 100) throw new RegraNegocioException("Use um valor entre 0 e 100.");
-                ctx.usuarios.atualizarRepasse(u.getId(), p);
-            }));
+            d.showAndWait().ifPresent(t -> Ui.executar(() ->
+                    ctx.cadastros.atualizarRepasse(u.getId(), Validadores.numeroBR(t).doubleValue())));
+            carregar();
+        }));
+        // revoga o acesso de quem saiu da clinica; o cadastro fica (historico, prontuario e log)
+        Button desativar = new Button("Desativar usuario");
+        desativar.setDisable(!psicologo);
+        desativar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
+            if (Ui.confirmar("Desativar " + u.getNome() + "? O usuario nao conseguira mais entrar no sistema."))
+                Ui.executar(() -> ctx.autenticacao.desativar(u.getId()));
             carregar();
         }));
         carregar();
-        return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela, Ui.linha(novo, repasse),
+        return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela, Ui.linha(novo, repasse, desativar),
                 Ui.aviso("Cada psicologo tem login proprio e so le os proprios registros de prontuario. "
                         + "A secretaria agenda e cuida do financeiro, mas nao acessa o prontuario. "
                         + "Contratos de repasse/sublocacao de sala devem estar formalizados por escrito."));
     }
 
-    private void carregar() { tabela.getItems().setAll(ctx.usuarios.listar()); }
+    private void carregar() { tabela.getItems().setAll(ctx.cadastros.listarUsuarios()); }
 
     private void novoUsuario() {
         TextField nome = new TextField();

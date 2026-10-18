@@ -2,6 +2,7 @@ package br.com.kleber.psigestor.dao;
 
 import br.com.kleber.psigestor.model.Papel;
 import br.com.kleber.psigestor.model.Usuario;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -41,8 +42,30 @@ public class UsuarioDAO {
                 "UPDATE usuario SET percentual_repasse_clinica = ? WHERE id = ?")) {
             ps.setDouble(1, percentualClinica);
             ps.setInt(2, id);
-            ps.executeUpdate();
+            // id inexistente: sem isso o service auditaria um evento que nao aconteceu
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar repasse", e); }
+    }
+
+    /** Revoga o acesso sem apagar: o usuario continua referenciado por atendimentos, prontuario e log. */
+    public void desativar(int id) {
+        try (PreparedStatement ps = con.prepareStatement("UPDATE usuario SET ativo = 0 WHERE id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao desativar usuario", e); }
+    }
+
+    public Optional<Usuario> buscar(int id) {
+        try (PreparedStatement ps = con.prepareStatement("SELECT * FROM usuario WHERE id = ?")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(mapear(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) { throw new DaoException("Erro ao buscar usuario", e); }
+    }
+
+    public long contarPsicologosAtivos() {
+        return listarPsicologos().size();
     }
 
     /** Grava senha e embrulho da chave juntos: um unico UPDATE e atomico, nao fica "meio trocado". */

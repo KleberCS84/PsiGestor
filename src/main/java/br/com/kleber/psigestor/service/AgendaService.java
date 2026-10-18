@@ -10,6 +10,8 @@ import java.util.List;
 public class AgendaService {
     static final int DIAS_RETROATIVOS = 30;
     static final int ANOS_A_FRENTE = 1;
+    public static final List<String> FORMAS_PAGAMENTO = List.of("PIX", "Dinheiro", "Cartao de debito",
+            "Cartao de credito", "Transferencia", "Convenio");
 
     private final Contexto ctx;
 
@@ -96,8 +98,17 @@ public class AgendaService {
             throw new RegraNegocioException("Conflito: " + pacienteNome + " ja tem atendimento nesse horario.");
     }
 
+    /** Pagar antes (agendado/confirmado) ou cobrar falta e permitido; cancelado ou ja pago, nao. */
     public void registrarPagamento(int atendimentoId, String forma) {
         ctx.exigirSessao();
+        if (forma == null || !FORMAS_PAGAMENTO.contains(forma))
+            throw new RegraNegocioException("Forma de pagamento invalida.");
+        Atendimento a = ctx.atendimentos.buscar(atendimentoId)
+                .orElseThrow(() -> new RegraNegocioException("Atendimento nao encontrado."));
+        if (a.getStatus() == StatusAtendimento.CANCELADO)
+            throw new RegraNegocioException("Atendimento cancelado nao pode receber pagamento.");
+        if (a.isPago())   // sobrescrever apagaria a forma original sem rastro
+            throw new RegraNegocioException("Pagamento ja registrado para este atendimento.");
         ctx.atendimentos.registrarPagamento(atendimentoId, forma);
         ctx.auditar("PAGAMENTO", "atendimento", atendimentoId);
     }
@@ -110,10 +121,12 @@ public class AgendaService {
     }
 
     public List<Atendimento> doDia(LocalDate dia, Integer profissionalId) {
+        ctx.exigirSessao();
         return ctx.atendimentos.listarPeriodo(dia.atStartOfDay(), dia.plusDays(1).atStartOfDay(), profissionalId);
     }
 
     public List<Atendimento> periodo(LocalDate de, LocalDate ateInclusive, Integer profissionalId) {
+        ctx.exigirSessao();
         return ctx.atendimentos.listarPeriodo(de.atStartOfDay(), ateInclusive.plusDays(1).atStartOfDay(), profissionalId);
     }
 }

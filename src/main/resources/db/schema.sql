@@ -112,7 +112,8 @@ CREATE TABLE IF NOT EXISTS log_acesso (
     acao        TEXT NOT NULL,
     entidade    TEXT,
     entidade_id INTEGER,
-    data_hora   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    data_hora   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    detalhe     TEXT                      -- ex.: login tentado em LOGIN_FALHOU
 );
 
 CREATE TRIGGER IF NOT EXISTS trg_log_sem_update

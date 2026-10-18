@@ -25,8 +25,9 @@ public class Database implements AutoCloseable {
      * em um banco que ja existe. Por isso cada mudanca de estrutura vira um passo em migrar().
      *  v1: usuario.chave_cifrada + usuario.chave_iv (criptografia de envelope / troca de senha)
      *  v2: convenio.prazo_pagamento_dias >= 0 (triggers: SQLite nao acrescenta CHECK em tabela existente)
+     *  v3: log_acesso.detalhe (login tentado nas falhas de login)
      */
-    static final int VERSAO_ESQUEMA = 2;
+    static final int VERSAO_ESQUEMA = 3;
 
     private final Connection conexao;
 
@@ -77,6 +78,9 @@ public class Database implements AutoCloseable {
                     CREATE TRIGGER IF NOT EXISTS trg_convenio_prazo_upd BEFORE UPDATE OF prazo_pagamento_dias ON convenio
                     WHEN NEW.prazo_pagamento_dias < 0
                     BEGIN SELECT RAISE(ABORT, 'Prazo de pagamento nao pode ser negativo.'); END""");
+            }
+            if (versao < 3) {
+                adicionarColunaSeFaltar(st, "log_acesso", "detalhe", "TEXT");
             }
             st.execute("PRAGMA user_version = " + VERSAO_ESQUEMA);
             conexao.commit();

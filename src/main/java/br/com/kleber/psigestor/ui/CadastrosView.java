@@ -32,12 +32,14 @@ public class CadastrosView {
         TextField sValor = new TextField();
         sValor.setPromptText("Valor");
         sValor.setPrefWidth(90);
+        // valores definem o que e cobrado: so o psicologo altera (regra garantida no CadastroService)
+        boolean psicologo = ctx.getSessao().usuario().isPsicologo();
         Button addServ = new Button("Adicionar servico");
         addServ.getStyleClass().add("primario");
+        addServ.setDisable(!psicologo);
         addServ.setOnAction(e -> {
             if (Ui.executar(() -> {
-                if (sNome.getText().isBlank()) throw new RegraNegocioException("Informe o nome do servico.");
-                ctx.servicos.salvar(new Servico(sNome.getText().trim(), vazioParaNull(sTuss.getText()),
+                ctx.cadastros.salvarServico(new Servico(sNome.getText().trim(), vazioParaNull(sTuss.getText()),
                         inteiro(sDur.getText()), Validadores.numeroBR(sValor.getText()).doubleValue()));
             })) { sNome.clear(); sTuss.clear(); sValor.clear(); carregar(); }
         });
@@ -59,10 +61,10 @@ public class CadastrosView {
         cPrazo.setPrefWidth(60);
         Button addConv = new Button("Adicionar convenio");
         addConv.getStyleClass().add("primario");
+        addConv.setDisable(!psicologo);
         addConv.setOnAction(e -> {
             if (Ui.executar(() -> {
-                if (cNome.getText().isBlank()) throw new RegraNegocioException("Informe o nome do convenio.");
-                ctx.convenios.salvar(new Convenio(cNome.getText().trim(), vazioParaNull(cAns.getText()),
+                ctx.cadastros.salvarConvenio(new Convenio(cNome.getText().trim(), vazioParaNull(cAns.getText()),
                         Validadores.numeroBR(cValor.getText()).doubleValue(), inteiro(cPrazo.getText())));
             })) { cNome.clear(); cAns.clear(); cValor.clear(); carregar(); }
         });
@@ -80,8 +82,8 @@ public class CadastrosView {
     }
 
     private void carregar() {
-        servicos.getItems().setAll(ctx.servicos.listar());
-        convenios.getItems().setAll(ctx.convenios.listar());
+        servicos.getItems().setAll(ctx.cadastros.listarServicos());
+        convenios.getItems().setAll(ctx.cadastros.listarConvenios());
     }
 
     static int inteiro(String s) {
