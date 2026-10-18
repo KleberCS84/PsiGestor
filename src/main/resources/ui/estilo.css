@@ -1,0 +1,36 @@
+/* PsiGestor - tema claro, tons de verde-agua (calma) */
+.root { -fx-font-family: "Segoe UI", "Inter", sans-serif; -fx-font-size: 13px; -fx-background-color: #f6f8f7; }
+
+.menu { -fx-background-color: #ffffff; -fx-border-color: transparent #e3e8e6 transparent transparent; -fx-pref-width: 220; }
+.menu-marca { -fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #0f766e; -fx-padding: 0 0 4 8; }
+.menu-usuario { -fx-text-fill: #6b7280; -fx-font-size: 11px; -fx-padding: 0 0 14 8; }
+.menu-item { -fx-background-color: transparent; -fx-alignment: center-left; -fx-padding: 9 12; -fx-background-radius: 8; -fx-text-fill: #374151; }
+.menu-item:hover { -fx-background-color: #eef6f5; }
+.menu-item.ativo { -fx-background-color: #d9f2ef; -fx-text-fill: #0f766e; -fx-font-weight: bold; }
+.menu-sair { -fx-background-color: transparent; -fx-text-fill: #b91c1c; -fx-alignment: center-left; }
+
+.titulo-tela { -fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: #1f2937; -fx-border-color: transparent transparent #14b8a6 transparent; -fx-border-width: 0 0 3 0; -fx-padding: 0 0 4 0; }
+
+.card { -fx-background-radius: 16; -fx-padding: 18; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.10), 12, 0, 0, 3); }
+.card-valor { -fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: white; }
+.card-titulo { -fx-text-fill: rgba(255,255,255,0.9); }
+.cor-azul    { -fx-background-color: linear-gradient(to bottom right, #6366f1, #818cf8); }
+.cor-laranja { -fx-background-color: linear-gradient(to bottom right, #f59e0b, #fbbf24); }
+.cor-rosa    { -fx-background-color: linear-gradient(to bottom right, #ec4899, #f472b6); }
+.cor-verde   { -fx-background-color: linear-gradient(to bottom right, #0d9488, #2dd4bf); }
+.cor-roxo    { -fx-background-color: linear-gradient(to bottom right, #7c3aed, #a78bfa); }
+.cor-cinza   { -fx-background-color: linear-gradient(to bottom right, #475569, #94a3b8); }
+
+.aviso { -fx-background-color: #fffbeb; -fx-border-color: #fcd34d; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 10; -fx-text-fill: #78350f; }
+.dica { -fx-text-fill: #6b7280; -fx-font-size: 11px; }
+
+.button { -fx-background-radius: 8; -fx-padding: 7 14; -fx-cursor: hand; }
+.button.primario { -fx-background-color: #0f766e; -fx-text-fill: white; -fx-font-weight: bold; }
+.button.primario:hover { -fx-background-color: #115e59; }
+
+.table-view { -fx-background-radius: 10; -fx-border-radius: 10; -fx-border-color: #e5e7eb; }
+.table-view .column-header { -fx-background-color: #f0fdfa; }
+
+.login-fundo { -fx-background-color: linear-gradient(to bottom right, #ccfbf1, #f0fdfa); }
+.login-caixa { -fx-background-color: white; -fx-background-radius: 18; -fx-padding: 30; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 24, 0, 0, 6); }
+.login-marca { -fx-font-size: 26px; -fx-font-weight: bold; -fx-text-fill: #0f766e; }

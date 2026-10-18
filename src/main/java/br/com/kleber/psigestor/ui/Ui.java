@@ -1,0 +1,141 @@
+package br.com.kleber.psigestor.ui;
+
+import br.com.kleber.psigestor.dao.DaoException;
+import br.com.kleber.psigestor.util.RegraNegocioException;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.geometry.Insets;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+
+import java.text.NumberFormat;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.function.Function;
+
+/** Utilitarios de interface reaproveitados por todas as telas. */
+public final class Ui {
+    public static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    public static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("HH:mm");
+    public static final DateTimeFormatter DATA_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final NumberFormat MOEDA = NumberFormat.getCurrencyInstance(Locale.of("pt", "BR"));
+
+    private Ui() { }
+
+    public static String moeda(double v) { return MOEDA.format(v); }
+
+    /** Coluna de tabela a partir de uma funcao (evita PropertyValueFactory e reflexao). */
+    public static <T> TableColumn<T, String> col(String titulo, Function<T, Object> f, double largura) {
+        TableColumn<T, String> c = new TableColumn<>(titulo);
+        c.setCellValueFactory(d -> {
+            Object v = f.apply(d.getValue());
+            return new SimpleStringProperty(v == null ? "" : v.toString());
+        });
+        c.setPrefWidth(largura);
+        return c;
+    }
+
+    public static <T> TableView<T> tabela() {
+        TableView<T> t = new TableView<>();
+        t.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        t.setPlaceholder(new Label("Nada para mostrar."));
+        VBox.setVgrow(t, Priority.ALWAYS);
+        return t;
+    }
+
+    public static VBox card(String titulo, String valor, String classeCor) {
+        Label v = new Label(valor);
+        v.getStyleClass().add("card-valor");
+        Label t = new Label(titulo);
+        t.getStyleClass().add("card-titulo");
+        VBox box = new VBox(4, v, t);
+        box.getStyleClass().addAll("card", classeCor);
+        box.setPrefWidth(230);
+        return box;
+    }
+
+    public static Label titulo(String texto) {
+        Label l = new Label(texto);
+        l.getStyleClass().add("titulo-tela");
+        return l;
+    }
+
+    public static Label aviso(String texto) {
+        Label l = new Label(texto);
+        l.setWrapText(true);
+        l.getStyleClass().add("aviso");
+        l.setMaxWidth(Double.MAX_VALUE);
+        l.setMinHeight(Region.USE_PREF_SIZE); // quebra linha em vez de cortar com "..."
+        return l;
+    }
+
+    public static VBox tela(javafx.scene.Node... filhos) {
+        VBox v = new VBox(14, filhos);
+        v.setPadding(new Insets(22));
+        return v;
+    }
+
+    public static HBox linha(javafx.scene.Node... filhos) {
+        HBox h = new HBox(10, filhos);
+        h.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        return h;
+    }
+
+    public static Region espaco() {
+        Region r = new Region();
+        HBox.setHgrow(r, Priority.ALWAYS);
+        return r;
+    }
+
+    public static GridPane formulario() {
+        GridPane g = new GridPane();
+        g.setHgap(10);
+        g.setVgap(8);
+        g.setPadding(new Insets(10));
+        return g;
+    }
+
+    /** Executa uma acao mostrando erros de regra de negocio em uma janela amigavel. */
+    public static boolean executar(Runnable acao) {
+        try {
+            acao.run();
+            return true;
+        } catch (RegraNegocioException | DaoException e) {
+            erro(e.getMessage());
+        } catch (RuntimeException e) {
+            erro("Erro inesperado: " + e.getMessage());
+        }
+        return false;
+    }
+
+    public static void erro(String msg) {
+        Alert a = new Alert(Alert.AlertType.WARNING, msg, ButtonType.OK);
+        a.setHeaderText(null);
+        a.setTitle("Atencao");
+        a.showAndWait();
+    }
+
+    public static void info(String msg) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION, msg, ButtonType.OK);
+        a.setHeaderText(null);
+        a.setTitle("PsiGestor");
+        a.showAndWait();
+    }
+
+    public static boolean confirmar(String msg) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION, msg, ButtonType.YES, ButtonType.NO);
+        a.setHeaderText(null);
+        Optional<ButtonType> r = a.showAndWait();
+        return r.isPresent() && r.get() == ButtonType.YES;
+    }
+
+    public static <T> Optional<T> selecionado(TableView<T> t) {
+        T item = t.getSelectionModel().getSelectedItem();
+        if (item == null) erro("Selecione um item na tabela.");
+        return Optional.ofNullable(item);
+    }
+}

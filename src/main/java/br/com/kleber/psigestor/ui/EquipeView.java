@@ -1,0 +1,80 @@
+package br.com.kleber.psigestor.ui;
+
+import br.com.kleber.psigestor.model.Papel;
+import br.com.kleber.psigestor.model.Usuario;
+import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.util.RegraNegocioException;
+import javafx.event.ActionEvent;
+import javafx.scene.Node;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
+
+public class EquipeView {
+    private final Contexto ctx;
+    private final TableView<Usuario> tabela = Ui.tabela();
+
+    public EquipeView(Contexto ctx) { this.ctx = ctx; }
+
+    public Node criar() {
+        tabela.getColumns().add(Ui.col("Nome", Usuario::getNome, 220));
+        tabela.getColumns().add(Ui.col("Login", Usuario::getLogin, 120));
+        tabela.getColumns().add(Ui.col("Perfil", Usuario::getPapel, 110));
+        tabela.getColumns().add(Ui.col("CRP", Usuario::getCrp, 100));
+        tabela.getColumns().add(Ui.col("% retido pela clinica", u -> u.isPsicologo()
+                ? String.format("%.1f%%", u.getPercentualRepasseClinica()) : "-", 150));
+
+        boolean psicologo = ctx.getSessao().usuario().isPsicologo();
+        Button novo = new Button("+ Novo usuario");
+        novo.getStyleClass().add("primario");
+        novo.setDisable(!psicologo);
+        novo.setOnAction(e -> novoUsuario());
+        Button repasse = new Button("Alterar % de repasse");
+        repasse.setDisable(!psicologo);
+        repasse.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
+            TextInputDialog d = new TextInputDialog(String.valueOf(u.getPercentualRepasseClinica()));
+            d.setHeaderText("Percentual retido pela clinica sobre as sessoes de " + u.getNome());
+            d.showAndWait().ifPresent(t -> Ui.executar(() -> {
+                double p = CadastrosView.numero(t);
+                if (p < 0 || p > 100) throw new RegraNegocioException("Use um valor entre 0 e 100.");
+                ctx.usuarios.atualizarRepasse(u.getId(), p);
+            }));
+            carregar();
+        }));
+        carregar();
+        return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela, Ui.linha(novo, repasse),
+                Ui.aviso("Cada psicologo tem login proprio e so le os proprios registros de prontuario. "
+                        + "A secretaria agenda e cuida do financeiro, mas nao acessa o prontuario. "
+                        + "Contratos de repasse/sublocacao de sala devem estar formalizados por escrito."));
+    }
+
+    private void carregar() { tabela.getItems().setAll(ctx.usuarios.listar()); }
+
+    private void novoUsuario() {
+        TextField nome = new TextField();
+        TextField login = new TextField();
+        PasswordField senha = new PasswordField();
+        ComboBox<Papel> papel = new ComboBox<>();
+        papel.getItems().setAll(Papel.values());
+        papel.setValue(Papel.SECRETARIA);
+        TextField crp = new TextField();
+        TextField perc = new TextField("0");
+        GridPane g = Ui.formulario();
+        g.addRow(0, new Label("Nome"), nome);
+        g.addRow(1, new Label("Login"), login);
+        g.addRow(2, new Label("Senha inicial"), senha);
+        g.addRow(3, new Label("Perfil"), papel);
+        g.addRow(4, new Label("CRP (psicologo)"), crp);
+        g.addRow(5, new Label("% retido pela clinica"), perc);
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Novo usuario");
+        d.getDialogPane().setContent(g);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {
+            if (!Ui.executar(() -> ctx.autenticacao.cadastrar(nome.getText(), login.getText(),
+                    senha.getText().toCharArray(), papel.getValue(), crp.getText(), CadastrosView.numero(perc.getText()))))
+                ev.consume();
+        });
+        d.showAndWait();
+        carregar();
+    }
+}
