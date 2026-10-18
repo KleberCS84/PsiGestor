@@ -1,0 +1,140 @@
+# Revisao final - PsiGestor (src/main/java e schema.sql)
+
+Escopo: leitura integral do codigo atual de `src/main/java` e `src/main/resources/db/schema.sql`, comparado com `docs/REVISAO.md`.
+Nada foi executado (sem build, sem testes). Itens marcados **(suspeita)** nao foram confirmados so pela leitura.
+Caminhos relativos a `src/main/java/br/com/kleber/psigestor/`. Numeros de linha referem-se ao estado atual (HEAD `7bfbe0e`; o working tree de `src/main` esta limpo, as correcoes M7/B5/B9 ja estao commitadas).
+
+## 1. Resumo executivo
+
+**Veredito: as correcoes registradas em `REVISAO.md` existem no codigo e resolvem os cenarios descritos.** Dos 24 itens/subitens marcados `[x]`: **23 CONFIRMADOS, 1 PARCIAL (A5, como o proprio REVISAO.md declara), 0 NAO CORRIGIDOS.** Os 4 itens deixados em aberto (M4, M6, B3, resto de B6) e os subitens sem `[x]` de B9 continuam de fato abertos e descritos corretamente.
+
+Nao encontrei achado **Critico** nem **Alto** novo. A migracao v5 (centavos) segue o procedimento recomendado pelo SQLite (FK desligada fora da transacao, tabela nova, copia, DROP, RENAME, `foreign_key_check`, rollback total em erro) e nao tem defeito confirmado; os riscos dela sao operacionais (sem copia previa do banco, falha de partida silenciosa).
+
+Achados novos: **0 Criticos, 0 Altos, 7 Medios, 13 Baixos.** Os mais relevantes:
+
+1. **Logout/expiracao falham "abertos"** quando a gravacao do log falha (`service/Contexto.java:102-107` e `:142-145`): a sessao (e a DEK) nao e encerrada.
+2. **Pagamento de falta e aceito mas nunca aparece no financeiro** (`service/AgendaService.java:105-119` x `service/FinanceiroService.java:38-49`), consequencia da correcao B8.
+3. **Desativar usuario e irreversivel** e, para psicologo, tranca o prontuario dele para sempre (`service/AutenticacaoService.java:146-161`, nenhum "reativar" existe); **restaurar backup antigo reativa usuarios desativados** (`service/BackupService.java:103-146`).
+4. **Copias em claro ficam no disco**: `psigestor.db.antes-restauracao-*` e diretorios `backup-*`/`restauracao-*` deixados por uma queda do processo (`service/BackupService.java:59,114,129`).
+5. **Repasse retroativo**: o percentual atual e aplicado a periodos passados (`service/FinanceiroService.java:68-71`).
+
+## 2. Verificacao dos itens marcados [x]
+
+Legenda: CONFIRMADO = a correcao existe e resolve o cenario; PARCIAL = falta algo (descrito).
+
+| Item | Status | Evidencia (arquivo:linha) | Observacao |
+|---|---|---|---|
+| C1 parser numerico | CONFIRMADO | `util/Validadores.java:42-63` (`numeroBR`: 3 regex, rejeita ambiguo "1.234", NaN, expoente, sinal), `:66-72` (`centavos`); usado em `ui/CadastrosView.java:43,68` e `ui/EquipeView.java:38,80` | `150.00`, `80,50`, `1.234,56` corretos; `7.5` = 7,5. Sem limite maximo e vazio vira 0 (ver B-9, B-10). |
+| A1 service/papel/auditoria | CONFIRMADO | `service/CadastroService.java:20-54` (`exigirPsicologo` + `auditar` em transacao); UI chama `ctx.cadastros` (`CadastrosView.java:42,67`, `EquipeView.java:38`) | Resta 1 acesso UI->DAO: `ui/PrivacidadeView.java:30` (`ctx.logs.ultimos(300)`), sem `exigirSessao` (B-7). |
+| A2 desativar usuario | CONFIRMADO | `service/AutenticacaoService.java:146-161` (psicologo, nao a si mesmo, nao o ultimo psicologo ativo, auditado); `dao/UsuarioDAO.java:53-59,~100` (`desativar`, `contarPsicologosAtivos`); `entrar` recusa inativo (`:87,:98-106`); botao em `ui/EquipeView.java:~65` | Nao existe reativar (M-2). |
+| A3 maquina de estados | CONFIRMADO | `model/StatusAtendimento.java:15-24` (`podeIrPara`); `service/AgendaService.java:79-95` (revalida conflito ao sair de CANCELADO, audita `STATUS_DE->PARA`) | `AGENDADO -> REALIZADO` e permitido para data futura (B-8). |
+| A4 update em id inexistente | CONFIRMADO | `dao/AtendimentoDAO.java:147`, `dao/PacienteDAO.java:40,92`, `dao/ConvenioDAO.java:26`, `dao/ServicoDAO.java:27`, `dao/UsuarioDAO.java:47,55` | `UsuarioDAO.atualizarCredenciais` (`:86`) ainda ignora a contagem (B-6). |
+| A5 dados em claro | PARCIAL (declarado) | Backup `.psgb`: `util/Criptografia.java:101-147` (AES-GCM, cabecalho como AAD); `service/BackupService.java:47-95`; exportacao restrita: `service/PacienteService.java:173-218` (`CREATE_NEW`, nome com sufixo aleatorio) | Banco principal e `.antes-restauracao` continuam em claro por decisao (`docs/POLITICA_DADOS.md` 3.4, 3.2). Ver M-3. |
+| M1 tentativas/inatividade | CONFIRMADO | `service/AutenticacaoService.java:80-140` (5 falhas -> 30 s, dobra ate 15 min, `LOGIN_BLOQUEADO`, `detalhe` sem texto digitado `:86`); `service/Contexto.java:95-107`; `ui/PsiGestorApp.java:58-69` (filtro + timer de 15 s); `util/Database.java:98-100` (v3) | Contador em memoria (declarado). Ver M-1 (fail-open) e B-11. |
+| M2 atomicidade | CONFIRMADO | `service/Contexto.java:113-135` (`transacao` reentrante); usada em `ProntuarioService.java:43,77`, `PacienteService.java:78,110,129,153,204`, `AgendaService.java:71,91,116,125`, `CadastroService.java:26,39,50`, `AutenticacaoService.java:73,110,157,187`; `BackupService.java:83-89` (backup sem log e apagado) | `listar` so audita depois de montar a lista (`ProntuarioService.java:76-80`). |
+| M3 registro ilegivel | CONFIRMADO | `service/ProntuarioService.java:52,61-80` (try/catch por registro, `REGISTRO_ILEGIVEL` auditado) | |
+| M5 PBKDF2 / senha 12 | CONFIRMADO | `util/Criptografia.java:34` (600.000), `:36`; `util/Database.java:101-104` (v4); `service/AutenticacaoService.java:20,56,170,221-228` (`atualizarIteracoes` dentro da transacao do login `:110-117`); `dao/UsuarioDAO.java:~80-90` | DEK nao e recifrada (so reembrulhada). Login de quem migra faz 4 derivacoes na thread de UI (B-12). |
+| M7 dinheiro em centavos | CONFIRMADO | schema `schema.sql:28,37,75` (INTEGER); `util/Database.java:105-110,130-159`; `model/Servico.java`, `Convenio.java`, `Atendimento.java` (`long ...Centavos`); `dao/*DAO` (`setLong/getLong`); `service/FinanceiroService.java:32-83` (somas `long`, `parteClinica` BigDecimal HALF_EVEN, liquido = bruto - clinica); `ui/Ui.java:33` | Teste existe (`PsiGestorTest.java:409-412` e migracao `:466-475`). Percentual segue `double` (nao e dinheiro). Ver M-5 (repasse retroativo) e analise da migracao na secao 3. |
+| M8 anonimizacao | CONFIRMADO | `service/PacienteService.java:121-133` (so psicologo, `ultimaReferencia + 5 anos`, auditado); `dao/PacienteDAO.java:68-94`; `ui/PacientesView.java:~74-90` (digitar o nome) | Faz exatamente o que o REVISAO descreve; lacunas em M-4. |
+| M9 agenda | CONFIRMADO | `service/AgendaService.java:30-36` (janela -30 dias/+1 ano), `:97-103` (`verificarConflitos` profissional e paciente); `dao/AtendimentoDAO.java:80-95`; `ui/AgendaView.java:~138-153` (`montarInicio`, `diaSelecionado`); `service/Contexto.java:78` (`hoje`) | "Passado so com confirmacao" virou "ate 30 dias, sem confirmacao" (decisao; sessoes mais antigas nao podem ser lancadas). |
+| B1 log tecnico | CONFIRMADO | `util/LogTecnico.java:388-432` (so classe e pilha; mensagem apenas de `SQLException`); `ui/Ui.java:127-131` (`mensagemPara`), `:106`; `ui/PsiGestorApp.java:33-37`; `BackupService.java:77,118,135` | Mensagens de `RegraNegocioException` passam cruas: `PacienteService.java:214,216` embute `IOException.getMessage()` (caminho) (B-13). |
+| B2 telas dentro de `Ui.executar` | CONFIRMADO | `ui/TelaPrincipal.java:73,91`; `PainelView.java:25`; `EquipeView.java`(`carregar`); `PrivacidadeView.java:30`; `ProntuarioView.java:29,59,80,90`; `TelaLogin.java:23,43,78`; `PsiGestorApp.java:54` | Ver B-15: `ctx.getSessao()` nulo dentro dessas telas vira "erro generico" no instante da expiracao. |
+| B4 backup/restauracao | CONFIRMADO | `service/BackupService.java:47-95` (`CREATE_NEW`, sufixo aleatorio `:72,206-210`, `integrity_check` antes e depois `:66,170`), `:103-146` (decifra, valida, copia do atual, `ATOMIC_MOVE`), `util/Database.java:56-61` (`arquivo()`), `:33` | Fluxo correto; riscos laterais em M-3 e M-6. |
+| B5 enumeracao de usuarios | CONFIRMADO | `service/AutenticacaoService.java:28,98-101` (PBKDF2 com `SALT_FICTICIO` e `ITERACOES_ATUAL` para login inexistente/inativo); `:47-53` (sessao/papel antes de qualquer validacao e do "login ja existe" `:60`) | Diferenca residual para quem ainda tem 210.000 (declarada). Bloqueio responde igual para login existente e inexistente (`:91-97`). |
+| B6 (sub) clearPassword | CONFIRMADO | `util/Criptografia.java:171-180` (`finally spec.clearPassword()`) | O restante de B6 segue aberto (secao 4). |
+| B7 validacoes de paciente | CONFIRMADO | `service/PacienteService.java:39-87` (nulo, limites, telefone, nascimento <= 130 anos, convenio inexistente, rollback do id `:82-85`); `util/Validadores.java:28-36`; `ui/PacientesView.java:~132-162` (`rascunho`) | |
+| B8 consentimento/pagamento/leituras | CONFIRMADO | `service/PacienteService.java:149-157,144-147`; `service/AgendaService.java:106-120,131-139` | Escopo do item cumprido. Fora do escopo ainda sem sessao: `PacienteService.java:135,159,163` (B-7). Consequencia nova em M-2/M-5 (falta paga). |
+| B9 (sub) LIKE ESCAPE | CONFIRMADO | `dao/PacienteDAO.java:98,102,111-113` | Busca continua sensivel a acento/caixa fora do ASCII (comportamento do `LIKE` do SQLite, pre-existente). |
+| B9 (sub) `rs.next()` | CONFIRMADO | `dao/AtendimentoDAO.java:93`, `dao/PacienteDAO.java:60`, `dao/UsuarioDAO.java:115`, `util/Database.java:75`; tambem `BackupService.java:174,179`, `JdbcUtil.java:25` | `grep getInt(1)` nao acha mais nenhum uso sem `next()`. |
+| B9 (sub) CHECK prazo | CONFIRMADO | `schema.sql:29`; `util/Database.java:87-97` (triggers v2) | Triggers v2 de `convenio` somem no DROP da v5, mas a tabela nova nasce com `CHECK` (equivalente). Banco antigo com prazo negativo ja gravado faz a v5 abortar (M-6). |
+| 3.2 `Evolucao.toString` | CONFIRMADO | `model/Evolucao.java:11-17` (texto oculto) | |
+
+Itens deixados em aberto (conferidos): **M4** sem AAD no prontuario (`Criptografia.java:149-159`, `updateAAD` so no backup `:115,:140`); **M6** troca de senha so reembrulha (`AutenticacaoService.java:167-196`); **B3** nenhum codigo de ACL/permissao (`grep Acl|PosixFile` vazio); **B6 resto** (String da UI, `cadastrar` sem zerar, DEK na `Sessao`); **B9** conexao unica, `ConsentimentoDAO.vigente` (le o historico inteiro), `ServicoDAO.buscar` (`:33`, lista tudo). Todos conferem com o REVISAO.md.
+
+## 3. Achados novos
+
+### Critica
+Nenhum.
+
+### Alta
+Nenhum.
+
+### Media
+
+**M-1. Encerramento de sessao falha "aberto" se a gravacao do log falhar** - `service/Contexto.java:102-107` e `:142-145`
+- `sairSeInativo()` chama `auditar(...)` ANTES de `sessao = null`; `sair()` idem. Se o INSERT em `log_acesso` lancar `DaoException` (disco cheio, banco travado, arquivo bloqueado por backup/antivirus), a excecao sobe e a sessao continua ativa.
+- Cenario: disco cheio, computador deixado logado por 10 min. O temporizador (`ui/PsiGestorApp.java:59-69`) chama `sairSeInativo()` a cada 15 s, falha toda vez (cada falha cai no `DefaultUncaughtExceptionHandler`, que abre um dialogo de erro a cada ciclo) e a tela com prontuario/agenda nunca e trocada pela de login; `exigirSessao()` (`:87-93`) tambem propaga a excecao em vez de negar. O botao Sair (`PsiGestorApp.java:54`) tem o mesmo defeito: a tela de login aparece mas `ctx.sessao` (com a DEK) fica preenchida.
+- Correcao: zerar `sessao` primeiro e auditar em seguida, dentro de try/catch que apenas registra no `LogTecnico` (logout nunca deve depender do log). Relacionado a M2: esse log nao precisa ser atomico com nada.
+
+**M-2. Pagamento de falta e aceito, mas nunca entra no financeiro; REALIZADO->FALTOU "esconde" dinheiro recebido** - `service/AgendaService.java:105-119` x `service/FinanceiroService.java:38-49`
+- A correcao de B8 documenta "cobrar falta e permitido" (`AgendaService.java:105`), mas `resumo` so soma `faturado/recebido/aReceber` para `REALIZADO`; `FALTOU` so incrementa `faltas`, e `repasse` ignora tudo que nao e `REALIZADO` (`:61`).
+- Cenario: paciente falta, a clinica cobra a taxa e a secretaria registra o PIX (`pago=1`). O Painel/Financeiro mostram R$ 0 recebido; a clinica "perdeu" o valor nos relatorios e nao ha repasse. Mesmo efeito se um REALIZADO ja pago for corrigido para FALTOU (transicao permitida em `StatusAtendimento.java:23`): `pago` continua 1 mas some do total.
+- Correcao: ou proibir pagamento de FALTOU (e bloquear REALIZADO->FALTOU quando `pago`), ou contar no financeiro todo atendimento `pago` independente de status.
+
+**M-3. Copias do banco em claro ficam em disco depois do backup/restauracao** - `service/BackupService.java:59,114,129`; `docs/POLITICA_DADOS.md:59`
+- `psigestor.db.antes-restauracao-<data>` e uma copia integral nao cifrada (cadastros, agenda, hashes) criada a cada restauracao e nunca removida pelo sistema. Alem disso, `backup-*` e `restauracao-*` (diretorios temporarios com `copia.db`/`restaurado.db` em claro) so sao apagados no `finally`; queda de energia, `kill` ou excecao `Error` entre a criacao e o `apagar` os deixa na pasta `PsiGestor` para sempre, e nada varre esses diretorios na partida. O aviso existe so na documentacao, nao na tela de restauracao.
+- Cenario: o `.psgb` e entregue cifrado a um contador/pendrive, mas a pasta `PsiGestor` do notebook acumula copias legiveis (LGPD art. 46); o aviso de "apagar" nunca chega a quem so usa a UI.
+- Correcao: cifrar a copia `antes-restauracao` com a mesma senha de backup (reuso de `Criptografia.cifrarComSenha`) ou avisar no dialogo final de `PrivacidadeView` e listar a copia; varrer `backup-*`/`restauracao-*` em `Contexto`/`PsiGestorApp.start`.
+
+**M-4. Anonimizacao deixa dados pessoais e usa referencia de guarda incompleta** - `dao/PacienteDAO.java:68-94`, `service/PacienteService.java:121-133`
+- (a) `responsavel_legal` (nome de terceiro) e `numero_carteirinha` (identificador) permanecem (decisao registrada em `docs/POLITICA_DADOS.md:17`, mas `REVISAO.md` M8 nao menciona e a tela de Pacientes continua exibindo a coluna "Responsavel" depois de anonimizar). `consentimento.observacao` (texto livre, `PacientesView` pede "ex.: termo assinado...") tambem fica.
+- (b) `ultimaReferencia` considera so `atendimento.inicio`/`criado_em`; registros de prontuario sem atendimento (`ProntuarioService.registrar(id, null, ...)`, usado por `ProntuarioView.java:59`) nao entram. Cenario: ultimo atendimento em 2019, registro documental feito em 2023: o cadastro e anonimizavel em 2025, antes dos 5 anos do ultimo registro.
+- (c) O paciente anonimizado continua `arquivado=0`: aparece nas listas, aceita novo agendamento (`AgendaService.agendar` so confere `isArquivado`) e pode ser editado de volta com dados reais (`PacienteService.salvar`), desfazendo a "irreversibilidade".
+- Correcao: incluir `evolucao.registrado_em` no `MAX`; arquivar na mesma transacao; recusar `salvar`/`agendar` para paciente anonimizado (marcar com coluna `anonimizado_em`); decidir e documentar `responsavel_legal`/`carteirinha`/`observacao`.
+
+**M-5. Repasse recalculado com o percentual atual para periodos passados** - `service/FinanceiroService.java:57-72`
+- O percentual vem de `usuario.percentual_repasse_clinica` no momento da consulta, nao do momento da sessao (diferente do valor, que e copiado para `atendimento.valor`). Cenario: em marco o repasse era 30 %; em abril muda para 40 % (`CadastroService.atualizarRepasse`, auditado mas sem historico de valor); o relatorio de marco passa a mostrar 40 %, e o que ja foi pago ao profissional deixa de bater.
+- Correcao: gravar o percentual no atendimento (como o valor) ou manter historico de vigencia; no minimo, gravar valor antigo/novo na auditoria.
+
+**M-6. Migracao v5 e inicializacao: sem copia previa e falha de partida silenciosa** - `util/Database.java:105-110,130-159`, `ui/PsiGestorApp.java:38`
+- A v5 reescreve 3 tabelas e muda o significado de `valor` (reais -> centavos) de forma irreversivel: depois do commit, uma versao anterior do app leria R$ 1,50 como R$ 150,00. Nao ha copia do `.db` antes de migrar.
+- Se o `INSERT ... SELECT` violar um `CHECK` da tabela nova (banco anterior a v2 com `prazo_pagamento_dias` negativo; `duracao_min <= 0`), a migracao inteira faz rollback (correto) e `new Database(...)` lanca `IllegalStateException` dentro de `PsiGestorApp.start()`: o app nao abre e o usuario nao ve mensagem (so o tratador de excecao/log). Banco pre-v2 com lixo e improvavel, mas o efeito e "app inutilizavel sem diagnostico". **(suspeita)** sobre o que o JavaFX mostra nesse caminho.
+- Correcao: copiar `psigestor.db` para `psigestor.db.pre-v5` (ou `VACUUM INTO`) antes do primeiro `migrar` que mude de versao; capturar a falha em `start()` e mostrar `Ui.erro` com instrucoes antes de sair; documentar "nao volte para versao anterior".
+
+**M-7. Restaurar um backup antigo desfaz revogacoes e anonimizacoes** - `service/BackupService.java:103-146`
+- O banco restaurado substitui `usuario.ativo`, `paciente` (inclusive dados ja anonimizados) e o log. Usuario desativado depois do backup volta a entrar; paciente anonimizado volta identificado. O dialogo (`ui/PrivacidadeView.java:~58-64`) avisa so das senhas; `POLITICA_DADOS.md:15` cita a reversao da anonimizacao, mas nao a reativacao de acessos (LGPD art. 46).
+- Correcao: no aviso de restauracao mencionar acessos e anonimizacoes; apos restaurar, listar usuarios ativos na proxima tela de login ou exigir que um psicologo reconfirme as desativacoes.
+
+### Baixa
+
+- **B-1. Desativar usuario nao tem volta** - `service/AutenticacaoService.java:146-161`, `dao/UsuarioDAO.java` (sem `reativar`). Desativar o usuario errado so se corrige editando o banco; para psicologo isso tranca todos os registros que so a DEK dele abre (nao ha recuperacao; ver "Recuperacao" na secao 3.1 do REVISAO). O login desativado tambem nao pode ser reutilizado (`UNIQUE`). Sugestao: `reativar(id)` restrito a psicologo + auditoria, e confirmacao reforcada ao desativar psicologo.
+- **B-2. Percentual de repasse nao e validado em `cadastrar`** - `service/AutenticacaoService.java:72`. `EquipeView.java:80` aceita `150`; o `CHECK 0..100` do banco rejeita e o usuario ve o erro generico (`Ui.ERRO_GENERICO`) em vez de "Use um valor entre 0 e 100". Reaproveitar a regra de `CadastroService.atualizarRepasse:48`.
+- **B-3. Rotulo desatualizado no primeiro acesso** - `ui/TelaLogin.java:70` diz "Senha (min. 8)"; a regra e 12 (`AutenticacaoService.java:20`).
+- **B-4. Dinheiro sem teto, vazio vale zero, somas sem `addExact`** - `util/Validadores.java:53,66-72`, `service/FinanceiroService.java:41-42,64`. `numeroBR("")` devolve 0, entao um servico/convenio sem valor e gravado como R$ 0,00 sem aviso; `999999999999999` (15 digitos) passa em `centavos` e as somas `long` poderiam estourar em silencio com varios lancamentos. Sugestao: teto (ex.: R$ 100.000,00) e `Math.addExact`; exigir valor nao vazio nos formularios.
+- **B-5. Sem sessao nas leituras publicas restantes** - `service/PacienteService.java:135` (`buscar`), `:159` (`temConsentimento`), `:163` (`consentimentos`) e `ui/PrivacidadeView.java:30` (`ctx.logs.ultimos`, DAO acessado pela UI, visivel tambem para a secretaria). Hoje so a UI logada chama, mas sao os mesmos buracos que A1/B8 queriam fechar.
+- **B-6. `UsuarioDAO.atualizarCredenciais` ignora o numero de linhas** - `dao/UsuarioDAO.java:86`. Mesmo padrao de A4: id inexistente grava `TROCA_SENHA` no log sem mudar nada.
+- **B-7. Fragilidades de status/recibo** - `service/AgendaService.java:79-95`, `:123-129`: `AGENDADO -> REALIZADO` vale para sessao futura (entra no faturado); `marcarReciboEmitido` aceita atendimento cancelado, nao pago ou de convenio e audita de novo se repetido.
+- **B-8. Exportacao do titular incompleta e vaza caminho** - `service/PacienteService.java:173-218`: nao inclui convenio/carteirinha nem valores/pagamentos (art. 18, II pede os dados tratados); o arquivo e gravado dentro da transacao antes do `commit` (commit que falha deixa o TXT sem log); `:214,216` mostra `IOException.getMessage()` ao usuario.
+- **B-9. Login com PBKDF2 600.000 na thread da UI** - `service/AutenticacaoService.java:98-117`, `BackupService.java:69`: psicologo = 2 derivacoes por login (hash + KEK), 4 no login que migra de 210.000; backup/restauracao tambem. Congelamento de 1-3 s esperado. Aceitavel hoje; torna-se bug se alguem mover para `Task` sem rever a conexao unica (B9 aberto).
+- **B-10. Iteracoes do backup nao ficam no cabecalho** - `util/Criptografia.java:111,136` usa a constante `ITERACOES_ATUAL`. Se a constante subir um dia, todos os `.psgb` antigos deixam de abrir (erro igual a "senha incorreta"). Gravar as iteracoes no cabecalho (ja ha byte de versao `VERSAO_BACKUP`).
+- **B-11. Limitador de login** - `service/AutenticacaoService.java:31-37,132-140`: contador por texto digitado nunca decai (4 erros em dias diferentes + 1 => bloqueio) e o mapa cresce com cada texto distinto (inclusive senhas digitadas no campo de login; ficam em memoria so em minusculas). Impacto baixo em desktop.
+- **B-12. Atividade em dialogos nao conta e corrida na expiracao** - `ui/PsiGestorApp.java:58` registra atividade so no `Scene` principal; um dialogo modal longo (novo usuario, backup) nao a renova, e a sessao pode vencer com o dialogo aberto. Alem disso, o primeiro evento depois de vencida a sessao (antes do timer de 15 s) anula `sessao` em `registrarAtividade` e as telas fazem `ctx.getSessao().usuario()` (`CadastrosView.java:36`, `EquipeView.java:27`, `PrivacidadeView.java:34`, `TrocaSenhaDialog.java:25`): NPE => "Nao foi possivel concluir a operacao" em vez de "Sessao encerrada". **(suspeita)** de que um dialogo aberto permaneca visivel apos `mostrarLogin()`.
+- **B-13. Tela de Financeiro com datas vazias** - `ui/FinanceiroView.java` (`carregar`): `de.getValue()` nulo (DatePicker limpo) vira NPE e erro generico; o mesmo cuidado de M9 (`diaSelecionado`) nao foi aplicado aqui.
+
+### Pontos de seguranca verificados sem achado
+- Nenhuma chave hardcoded; `SALT_FICTICIO` e gerado por execucao e nunca gravado. IV novo a cada cifragem (`Criptografia.java:149-159`). Cabecalho `.psgb` autenticado como AAD.
+- Restauracao nao toca no banco atual ate decifrar, conferir integridade, esquema e versao (`BackupService.java:110-123,167-195`); `Files.copy` sem sobrescrever; senha errada e adulteracao dao o mesmo erro.
+- Tabelas/colunas concatenadas em SQL vem so de constantes (`AtendimentoDAO.java:85-95`, `Database.java:130-159`); `PRAGMA foreign_keys` volta a ON no `finally` (`Database.java:121`).
+- Analise da migracao v5: FK OFF antes de `setAutoCommit(false)` (`:80-81`) evita o `ON DELETE SET NULL` de `paciente.convenio_id` e `atendimento.convenio_id` durante o `DROP TABLE convenio`; `ROUND(valor*100)` corrige o ruido de ponto flutuante (33.33 -> 3333); ids preservados mantem as FK; indice de `atendimento` recriado (`:108-109`); `foreign_key_check` antes do commit. Banco novo (`user_version=0`) nao entra em `converterParaCentavos` (coluna ja INTEGER). Residual: valores gravados com o parser antigo (C1) que ja estavam inflados (ex.: R$ 15.000 no lugar de 150) sao convertidos fielmente, isto e, o erro historico e preservado.
+
+## 4. Divergencias entre REVISAO.md e o codigo
+
+1. **Secao 1, "unica concatenacao e o `VACUUM INTO`"** (tambem secao 5): hoje ha outras concatenacoes, todas com constantes internas: `Database.java:80,114,133,142-157` (DDL da migracao e `PRAGMA user_version`), `AtendimentoDAO.java:85-95` (nome da coluna). Ajustar a frase para "nenhum dado do usuario e concatenado".
+2. **Referencias `arquivo:linha` desatualizadas** em varios pontos (as de `## 2` descrevem o estado original, o que e coerente com "Corrigido em:", mas as das secoes 3.x ainda sao citadas como atuais): 3.1 `Criptografia.java:88`, `:86-87`, `:59-63`, `:48-52` (hoje `:149-159`, `:66-70`, `:55-59`), `AutenticacaoService.java:123-129` (hoje `:231-237`), `TelaLogin.java:59-60` (hoje `:~76-77`), `TrocaSenhaDialog.java:26` (hoje `:~30`); 3.3 `ProntuarioService.java:59-64`, `:55`, `:36-45` (hoje `:84-89`, `:63-64`, `:37-49`); 3.4 `AgendaService.java:39-41` (hoje `:49-51`), `PacienteService.java:42-43` (hoje `:67-68`), `PainelView.java:40` (hoje `:~44-46`); 3.2 `ProntuarioView.java:38-48`. Nenhuma afirmacao de comportamento ficou falsa por isso.
+3. **Secao 3.4** diz que "o unico consentimento exigido e `ATENDIMENTO_ONLINE`, so ao agendar": correto (`AgendaService.java:49-51`).
+4. **M8 no REVISAO** lista "nome/CPF/contatos" e a UI (`PacientesView.java:~78`) tambem; a exclusao de `responsavel_legal`/`numero_carteirinha` so esta em `POLITICA_DADOS.md:17`. Trazer para a secao 3.5 do REVISAO (ver M-4).
+5. **Secao 3.5/3.6** nao citam a `LOGOUT_INATIVIDADE` e `LOGIN_BLOQUEADO` entre os eventos auditados (existem em `Contexto.java:104` e `AutenticacaoService.java:94`); e a "Boa cobertura" nao menciona que a auditoria do logout depende do sucesso do INSERT (M-1).
+6. **B9** esta listado como parcial e confere. **Contagem final** (18 corrigidos, 3 parciais, 3 abertos) bate com os itens: C1, A1-A4, M1-M3, M5, M7-M9 e B1, B2, B4, B5, B7, B8 = 18; parciais A5, B6, B9; abertos M4, M6, B3.
+7. **Limitacoes conhecidas (secao 4)** conferem com o codigo (M4, M6, B3, B6 resto). Faltam nela, por existirem no codigo: copia `antes-restauracao` e temporarios em claro (M-3), contador de login em memoria (so citado dentro de M1), reativacao de acessos ao restaurar backup (M-7), repasse retroativo (M-5).
+
+## 5. Recomendacoes priorizadas
+
+1. **(Media, pequeno)** M-1: zerar a sessao antes de auditar no logout/inatividade, com a auditoria em try/catch. Corrige uma falha de sigilo com poucas linhas.
+2. **(Media, pequeno)** M-2: decidir a regra de falta paga (aceitar e contar, ou proibir) e alinhar `FinanceiroService` e `AgendaService`; incluir teste.
+3. **(Media, medio)** M-6: copia previa do `.db` antes de migrar e mensagem de erro na partida; documentar que a v5 nao tem volta.
+4. **(Media, medio)** M-3 e M-7: cifrar ou avisar sobre `antes-restauracao`, varrer temporarios na partida e ampliar o aviso da restauracao (acessos e anonimizacoes).
+5. **(Media, medio)** M-4: incluir `evolucao.registrado_em` na data de guarda, arquivar/bloquear paciente anonimizado, decidir `responsavel_legal`/`carteirinha`/`observacao`.
+6. **(Media, medio)** M-5: congelar o percentual de repasse por atendimento (ou historico de vigencia).
+7. **(Baixa)** B-1 (reativar usuario), B-2, B-3, B-4, B-5, B-6, B-13: ajustes pequenos de validacao/consistencia; B-8 a B-12 quando houver tempo.
+8. **Documentacao**: atualizar `REVISAO.md` (secao 1/5 sobre concatenacao, referencias de linha, secao 4 com os itens acima) depois de decidir os pontos 1-6.
+9. **Pendentes antigos** (M4 AAD, M6 rotacao de DEK, B3 permissoes) continuam sendo os maiores riscos de longo prazo; o mais barato dos tres e M4 (`updateAAD` com `paciente_id|profissional_id`), mas exige migrar registros existentes (o formato atual nao tem versao de cifra por linha).
