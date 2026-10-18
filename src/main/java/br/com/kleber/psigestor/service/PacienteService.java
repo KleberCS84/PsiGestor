@@ -138,6 +138,7 @@ public class PacienteService {
     }
 
     public Paciente buscar(int id) {
+        ctx.exigirSessao();
         return ctx.pacientes.buscar(id).orElseThrow(() -> new RegraNegocioException("Paciente nao encontrado."));
     }
 
@@ -162,10 +163,12 @@ public class PacienteService {
     }
 
     public boolean temConsentimento(int pacienteId, TipoConsentimento tipo) {
+        ctx.exigirSessao();
         return ctx.consentimentos.vigente(pacienteId, tipo);
     }
 
     public List<Consentimento> consentimentos(int pacienteId) {
+        ctx.exigirSessao();
         return ctx.consentimentos.historico(pacienteId);
     }
 

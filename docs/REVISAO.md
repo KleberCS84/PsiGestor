@@ -6,7 +6,7 @@ Nada foi executado; tudo o que esta listado vem de leitura do codigo. Itens marc
 
 ## 1. Resumo executivo
 
-O projeto tem uma base boa de privacidade: AES-256-GCM com IV aleatorio por registro, chave de dados (DEK) por psicologo embrulhada por uma chave derivada da senha (PBKDF2), prontuario append-only com triggers, trilha de auditoria e nenhuma chave hardcoded. Nao ha SQL injection (tudo usa `PreparedStatement`; a unica concatenacao e o `VACUUM INTO`, com escape de aspas).
+O projeto tem uma base boa de privacidade: AES-256-GCM com IV aleatorio por registro, chave de dados (DEK) por psicologo embrulhada por uma chave derivada da senha (PBKDF2), prontuario append-only com triggers, trilha de auditoria e nenhuma chave hardcoded. Nao ha SQL injection: nenhum dado digitado e concatenado em SQL (tudo usa `PreparedStatement`); as concatenacoes que existem usam so constantes internas (DDL e `PRAGMA user_version` da migracao em `Database`, nome de coluna em `AtendimentoDAO.contarSobrepostos`) ou caminho de arquivo com escape de aspas (`VACUUM INTO`).
 
 Estado atual (apos as correcoes registradas na secao 2):
 
@@ -14,7 +14,7 @@ Estado atual (apos as correcoes registradas na secao 2):
 2. **Autorizacao e auditoria no service**: servicos, convenios e repasse passam por `CadastroService` com papel e auditoria (A1); usuarios podem ser desativados (A2); operacao e log sao atomicos (M2); o status do atendimento segue maquina de estados (A3).
 3. **Autenticacao endurecida**: bloqueio progressivo por login e por inatividade (M1), PBKDF2 com 600.000 iteracoes e senha minima de 12 (M5), tempo de resposta igual para login inexistente/inativo e checagem de permissao antes de revelar login duplicado (B5).
 4. **LGPD**: backup cifrado `.psgb` com restauracao verificada (A5 parcial, B4), exportacao do titular restrita ao psicologo, anonimizacao apos o prazo de guarda (M8). O banco principal continua sem cifra (protecao em repouso delegada ao BitLocker, ver `docs/POLITICA_DADOS.md`).
-5. **Ainda em aberto**: ver secao 4, "Limitacoes conhecidas" (M4, M6, B3, parte de B6) e os subitens sem [x] de B9.
+5. **Ainda em aberto**: ver secao 4, "Limitacoes conhecidas" (M4, M6, B3, parte de B6, subitens sem [x] de B9 e os itens que a revisao final deixou abertos). A verificacao independente destas correcoes e os achados posteriores estao em `docs/REVISAO_FINAL.md`.
 
 Contagem original: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 Situacao: 18 corrigidos, 3 parciais (A5, B6, B9), 3 abertos e documentados como limitacao (M4, M6, B3).
@@ -115,6 +115,7 @@ Situacao: 18 corrigidos, 3 parciais (A5, B6, B9), 3 abertos e documentados como 
 
 [x] **M8. Direito de eliminacao/anonimizacao nao implementado**
 - Corrigido em: `service/PacienteService.java` (`anonimizarPaciente`), `dao/PacienteDAO.java` (`ultimaReferencia`, `anonimizar`), `ui/PacientesView.java` (confirmacao digitando o nome), `docs/POLITICA_DADOS.md` (regra; eliminacao do prontuario = decisao pendente)
+- Complemento (REVISAO_FINAL M-4): a anonimizacao limpa tambem `responsavel_legal` e `numero_carteirinha`, arquiva, grava `paciente.anonimizado_em` (migracao v6) e o cadastro passa a recusar edicao, desarquivamento e agendamento; a data de referencia inclui o ultimo registro de prontuario. Ficam `convenio_id` e `consentimento.observacao`.
 - `service/PacienteService.java:53-63` (so arquivar), `schema.sql` (FK `ON DELETE RESTRICT`, triggers de delete). Detalhes na secao 3.5.
 - Correcao: `anonimizarPaciente(id)` (substitui nome/CPF/contatos por valores neutros mantendo id e vinculos financeiros), restrito a psicologo, apos `criado_em + 5 anos`, com auditoria; politica documentada.
 
@@ -174,45 +175,47 @@ Situacao: 18 corrigidos, 3 parciais (A5, B6, B9), 3 abertos e documentados como 
 ### 3.1 Criptografia (verificado)
 | Item | Situacao |
 |---|---|
-| Algoritmo/modo | AES-256-GCM (`AES/GCM/NoPadding`), tag de 128 bits - adequado (`util/Criptografia.java:88`). |
-| IV | 12 bytes de `SecureRandom` novo a cada cifragem, gravado junto do texto (`:86-87`). Aceitavel. |
-| Chave | DEK aleatoria de 256 bits por psicologo (`:59-63`), embrulhada por KEK = PBKDF2(senha, salt proprio) (`AutenticacaoService.java:123-129`). **Nenhuma chave hardcoded** (nao ha constantes de chave/segredo no codigo). |
-| Senha | PBKDF2-HMAC-SHA256, salt de 16 bytes, comparacao em tempo constante (`:48-52`). 600.000 iteracoes, contagem gravada por usuario e migrada no login; senha minima de 12 (M5). Login inexistente/inativo tambem paga o PBKDF2 (B5). |
-| Backup | Arquivo `.psgb` cifrado com AES-GCM e chave derivada de uma senha de backup (A5, B4). |
+| Algoritmo/modo | AES-256-GCM (`AES/GCM/NoPadding`), tag de 128 bits - adequado (`util/Criptografia.java`, `cifrarBytes`/`decifrarBytes`). |
+| IV | 12 bytes de `SecureRandom` novo a cada cifragem, gravado junto do texto (`Criptografia.cifrarBytes`). Aceitavel. |
+| Chave | DEK aleatoria de 256 bits por psicologo (`Criptografia.novaChaveDados`), embrulhada por KEK = PBKDF2(senha, salt proprio) (`AutenticacaoService.embrulhar`). **Nenhuma chave hardcoded** (nao ha constantes de chave/segredo no codigo). |
+| Senha | PBKDF2-HMAC-SHA256, salt de 16 bytes, comparacao em tempo constante (`Criptografia.hashSenha`/`senhaConfere`). 600.000 iteracoes, contagem gravada por usuario e migrada no login; senha minima de 12 (M5). Login inexistente/inativo tambem paga o PBKDF2 (B5). |
+| Backup | Arquivo `.psgb` cifrado com AES-GCM e chave derivada de uma senha de backup (A5, B4); formato v2 grava as iteracoes no cabecalho autenticado e ainda le a v1 (`Criptografia.cifrarComSenha`/`decifrarComSenha`). |
 | AAD | Nao usado (M4, ver secao 4). |
-| Recuperacao | Inexistente: senha perdida = prontuario irrecuperavel. E comunicado ao usuario (`TelaLogin.java:59-60`, `TrocaSenhaDialog.java:26`), mas e risco de disponibilidade; considerar chave de recuperacao guardada offline. |
+| Recuperacao | Inexistente: senha perdida = prontuario irrecuperavel. E comunicado ao usuario (primeiro acesso em `ui/TelaLogin.java` e `ui/TrocaSenhaDialog.java`), mas e risco de disponibilidade; considerar chave de recuperacao guardada offline. |
 | Metadados | `paciente_id`, `profissional_id`, `atendimento_id`, `registrado_em`, `retifica_id` ficam em claro (revelam frequencia e cronologia). |
 
 ### 3.2 Vazamento em logs, toString e mensagens
 - [x] Nenhum conteudo de prontuario aparece em log, exception ou `toString` hoje. **Risco latente**: `Evolucao` e um `record`, cujo `toString()` padrao imprimiria `texto`; se alguem passar a logar o objeto, o prontuario vai para o log. Sobrescrever `toString` em `model/Evolucao.java`.
   - Corrigido em: `model/Evolucao.java` (`toString` oculta o texto)
-- `Usuario.toString` (`Usuario.java:53-55`) mostra so nome/CRP; `Paciente.toString` so o nome. Hash/salt/chave nunca sao impressos.
+- `Usuario.toString` mostra so nome/CRP; `Paciente.toString` so o nome. Hash/salt/chave nunca sao impressos.
 - `log_acesso` guarda apenas acao/entidade/id, sem conteudo (bom).
-- Mensagens: `Criptografia.java:102` e generica; erros inesperados mostram mensagem generica ao usuario e vao para `~/PsiGestor/logs` so com classe e pilha (B1 corrigido).
-- O texto do prontuario permanece num `ListView` (`ui/ProntuarioView.java:38-48`) ate trocar de tela ou sair; o bloqueio por inatividade encerra a sessao (M1 corrigido).
+- Mensagens: a falha de decifragem (`Criptografia.decifrarBytes`) e generica; erros inesperados mostram mensagem generica ao usuario e vao para `~/PsiGestor/logs` so com classe e pilha (B1 corrigido).
+- O texto do prontuario permanece no `ListView` de `ui/ProntuarioView.java` ate trocar de tela ou sair; o bloqueio por inatividade encerra a sessao (M1 corrigido).
 
 ### 3.3 Controle de acesso
-- Prontuario: `exigirPsicologo` exige papel e chave (`ProntuarioService.java:59-64`) - correto. Registros de outro psicologo aparecem como `SIGILOSO` (linha 55) - bom.
+- Prontuario: `ProntuarioService.exigirPsicologo` exige papel e chave - correto. Registros de outro psicologo aparecem como `ProntuarioService.SIGILOSO` em `listar` - bom.
 - Qualquer psicologo le/escreve prontuario de qualquer paciente da clinica (sem vinculo terapeuta-paciente); so o conteudo antigo de outro autor fica protegido.
-- `ProntuarioService.gravar` (`:36-45`) nao confere que `atendimentoId` e `retificaId` pertencem ao `pacienteId` informado (a FK so garante existencia): uma retificacao pode apontar para registro de outro paciente. Retificar um registro "SIGILOSO" de outro autor e permitido.
+- `ProntuarioService.gravar` nao confere que `atendimentoId` e `retificaId` pertencem ao `pacienteId` informado (a FK so garante existencia): uma retificacao pode apontar para registro de outro paciente. Retificar um registro "SIGILOSO" de outro autor e permitido.
 - A secretaria acessa todos os dados cadastrais e a agenda; a exportacao do relatorio LGPD agora e restrita ao psicologo (A5).
-- Servicos/convenios/repasse exigem papel de psicologo e sao auditados (A1 corrigido); usuarios podem ser desativados, nunca o ultimo psicologo ativo (A2 corrigido).
+- Servicos/convenios/repasse exigem papel de psicologo e sao auditados (A1 corrigido); usuarios podem ser desativados, nunca o ultimo psicologo ativo (A2 corrigido), e reativados por um psicologo (REVISAO_FINAL B-1).
+- Leituras de paciente, consentimentos e da trilha de auditoria exigem sessao; a tela Privacidade le o log por `AutenticacaoService.trilhaDeAcesso`, nao pelo DAO (REVISAO_FINAL B-5).
 - Cadastro de usuario confere sessao e papel antes de qualquer outra validacao (B5).
 
 ### 3.4 Consentimento
 - Historico append-only com "vale o mais recente" (`ConsentimentoDAO`) - boa pratica.
-- O unico consentimento exigido pelo codigo e `ATENDIMENTO_ONLINE`, so ao agendar (`AgendaService.java:39-41`); revogar depois nao afeta consultas ja marcadas. `CONTATO_WHATSAPP_EMAIL` nao e verificado em lugar nenhum (o Painel so mostra aviso textual, `PainelView.java:40`). `CONTRATO_TERAPEUTICO` nao e exigido para agendar nem para registrar prontuario.
+- O unico consentimento exigido pelo codigo e `ATENDIMENTO_ONLINE`, so ao agendar (`AgendaService.agendar`); revogar depois nao afeta consultas ja marcadas. `CONTATO_WHATSAPP_EMAIL` nao e verificado em lugar nenhum (o Painel so mostra aviso textual, `ui/PainelView.java`). `CONTRATO_TERAPEUTICO` nao e exigido para agendar nem para registrar prontuario.
 - O registro de consentimento nao guarda versao do termo nem quem coletou (so o log de auditoria, que registra o usuario logado). Dados de saude podem se apoiar em tutela da saude (LGPD art. 11, II, f) e nao em consentimento; documentar a base legal de cada tratamento.
-- Menor de idade: exige `responsavelLegal` preenchido (`PacienteService.java:42-43`), mas nao registra consentimento do responsavel.
+- Menor de idade: exige `responsavelLegal` preenchido (`PacienteService.salvar`), mas nao registra consentimento do responsavel.
 
 ### 3.5 Direitos do titular
 - Acesso/portabilidade (art. 18, II e V): exportacao TXT existe e e auditada, so pelo psicologo, com nome nao previsivel e sem sobrescrever (A5). Continua sem formato estruturado, em texto legivel (vai para o titular) e sem verificacao de identidade do solicitante. O prontuario fica fora, por decisao documentada.
 - Correcao (art. 18, III): editar cadastro e possivel e auditado como `ALTERACAO_PACIENTE`, sem valor anterior/posterior.
-- Eliminacao/anonimizacao (art. 18, IV e VI) e termino do tratamento (art. 15-16): anonimizacao implementada apos o prazo de guarda, restrita ao psicologo e auditada (M8). A eliminacao do prontuario segue como decisao pendente em `docs/POLITICA_DADOS.md`.
+- Eliminacao/anonimizacao (art. 18, IV e VI) e termino do tratamento (art. 15-16): anonimizacao implementada apos o prazo de guarda (5 anos do mais recente entre ultimo atendimento, ultimo registro de prontuario e cadastro), restrita ao psicologo e auditada (M8). Limpa nome, CPF, nascimento, contatos, responsavel legal e carteirinha; arquiva o paciente e impede editar, desarquivar ou agendar de novo (REVISAO_FINAL M-4). Mantem `convenio_id` (financeiro) e o texto livre `consentimento.observacao`. A eliminacao do prontuario segue como decisao pendente em `docs/POLITICA_DADOS.md`.
 
 ### 3.6 Auditoria
-- Boa cobertura: login/logout, cadastro/alteracao de paciente, leitura/escrita/retificacao de prontuario, consentimentos, exportacao, backup, troca de senha.
+- Boa cobertura: login/logout (`LOGIN`, `LOGOUT`, `LOGOUT_INATIVIDADE`), falhas e bloqueio de login (`LOGIN_FALHOU`, `LOGIN_BLOQUEADO`), cadastro/alteracao/anonimizacao de paciente, leitura/escrita/retificacao de prontuario, consentimentos, exportacao, backup e restauracao, troca de senha, desativacao/reativacao de usuario (`DESATIVACAO_USUARIO`, `REATIVACAO_USUARIO`).
 - Fechadas: alteracoes de servico/convenio/repasse auditadas (A1); falhas de login registram a conta cadastrada, nunca o texto digitado (M1); operacao e log atomicos (M2); id inexistente nao gera evento (A4); restauracao de backup auditada (B4).
+- Excecao de proposito: o logout (manual ou por inatividade) encerra a sessao primeiro e so depois tenta gravar o log; se o log falhar, o evento vai so para o log tecnico (REVISAO_FINAL M-1). Sigilo vem antes da trilha.
 - Lacunas restantes: leitura/pesquisa de cadastros e agenda nao e auditada; o log e protegido por triggers que quem tem acesso ao arquivo pode remover (sem encadeamento de hash), logo prova pouco contra um administrador malicioso.
 - `PrivacidadeView` mostra so os 300 ultimos eventos, sem filtro nem exportacao.
 
@@ -225,11 +228,23 @@ Itens avaliados e mantidos em aberto de proposito; o risco de cada um:
 - **B3. Arquivos com permissoes padrao**: banco, backups, logs e exportacoes herdam a ACL da pasta, entao outra conta do Windows com acesso a pasta pode copia-los.
 - **B6 (restante). Senha em memoria**: a `String` digitada na UI e a senha usada em `cadastrar` nao sao zeradas, e a DEK fica na memoria ate o coletor de lixo, entao um dump de memoria do processo pode expo-las.
 
+Apontados em `docs/REVISAO_FINAL.md` e ainda abertos (total ou parcialmente):
+
+- **Copia `antes-restauracao` em claro (M-3, parcial)**: os temporarios de backup/restauracao ja sao apagados na partida e o dialogo mostra onde a copia ficou, mas a copia do banco anterior continua sem cifra ate alguem apaga-la, legivel para quem acessar a pasta.
+- **Contador de tentativas de login em memoria (M1)**: fechar e reabrir o PsiGestor zera o bloqueio, entao quem tem acesso ao computador pode continuar adivinhando senhas em rodadas de 5 tentativas.
+- **Restaurar backup antigo reativa acessos e desfaz anonimizacoes (M-7, so aviso)**: o aviso orienta revisar a Equipe e refazer as anonimizacoes, mas se ninguem fizer isso um ex-colaborador volta a entrar e dados pessoais eliminados voltam a existir.
+- **Percentual de repasse anterior a v6 (M-5)**: atendimentos realizados antes da migracao v6 receberam o percentual vigente no dia da migracao, entao relatorios de periodos em que o percentual era outro podem nao bater com o que foi pago.
+- **B-7. Status e recibo frageis**: `AGENDADO -> REALIZADO` vale para sessao futura e `marcarReciboEmitido` aceita atendimento cancelado, nao pago ou de convenio, entao o faturado e os recibos pendentes podem incluir o que nao aconteceu.
+- **B-8. Exportacao do titular incompleta**: o relatorio nao traz convenio/carteirinha nem valores e pagamentos e pode mostrar caminho de arquivo em erro, entao a resposta ao art. 18, II pode ficar incompleta.
+- **B-9. PBKDF2 na thread da tela**: login, backup e restauracao congelam a janela por 1-3 s, e mover isso para uma thread de fundo sem rever a conexao JDBC unica causaria corrida no banco.
+- **B-11. Limitador de login sem decaimento**: o contador por login nunca zera com o tempo e guarda em memoria cada texto distinto digitado no campo de login, entao erros esparsos levam a bloqueio e uma senha digitada no campo errado fica na memoria do processo.
+- **B-12. Atividade em dialogos e expiracao**: um dialogo longo (novo usuario, backup) nao renova a sessao e, no instante da expiracao, algumas telas mostram "erro generico" em vez de "sessao encerrada", o que confunde o usuario e pode encerrar um cadastro no meio.
+
 ## 5. Pontos positivos
 
 - Criptografia de envelope bem desenhada (DEK aleatoria por psicologo, KEK da senha, troca de senha sem recifrar registros), GCM com IV novo por operacao, comparacao em tempo constante, nenhum segredo hardcoded.
 - Prontuario append-only com triggers de UPDATE/DELETE e fluxo de retificacao; log de acesso tambem protegido por triggers.
-- `PreparedStatement` em todo o acesso a dados; `VACUUM INTO` com escape de aspas; `PRAGMA foreign_keys = ON` explicito.
+- `PreparedStatement` em todo o acesso a dados; nenhum dado digitado concatenado em SQL (so constantes internas e o caminho do `VACUUM INTO`, com escape de aspas); `PRAGMA foreign_keys = ON` explicito.
 - `CHECK` no schema para papel, status, modalidade, `fim > inicio`, `duracao_min > 0`, valores >= 0 e repasse 0..100.
 - Mensagem de login generica, zeragem do `char[]` da senha em `entrar`/`trocarSenha`, migracao de esquema transacional e idempotente (`Database.migrar`).
 - Validacao de CPF por digitos verificadores e unicidade, CPF opcional (minimizacao), responsavel legal obrigatorio para menores, bloqueio de agendamento online sem consentimento.

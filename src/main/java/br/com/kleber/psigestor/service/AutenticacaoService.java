@@ -1,5 +1,6 @@
 package br.com.kleber.psigestor.service;
 
+import br.com.kleber.psigestor.model.LogAcesso;
 import br.com.kleber.psigestor.model.Papel;
 import br.com.kleber.psigestor.model.Usuario;
 import br.com.kleber.psigestor.util.Criptografia;
@@ -12,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -159,6 +161,12 @@ public class AutenticacaoService {
             ctx.usuarios.desativar(usuarioId);
             ctx.auditar("DESATIVACAO_USUARIO", "usuario", usuarioId);
         });
+    }
+
+    /** Ultimos eventos da trilha de auditoria (tela Privacidade). A UI nao le o DAO direto. */
+    public List<LogAcesso> trilhaDeAcesso(int limite) {
+        ctx.exigirSessao();
+        return ctx.logs.ultimos(limite);
     }
 
     /** Desfaz uma desativacao (ex.: usuario errado, profissional que voltou). So psicologo, auditado. */

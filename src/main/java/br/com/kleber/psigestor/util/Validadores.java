@@ -62,8 +62,12 @@ public final class Validadores {
         throw new RegraNegocioException("Valor invalido: " + s);
     }
 
-    /** Valor em reais digitado -> centavos. numeroBR ja limita a 2 casas, entao a conversao e exata. */
+    /**
+     * Valor em reais digitado -> centavos. numeroBR ja limita a 2 casas, entao a conversao e exata.
+     * Vazio e recusado: preco em branco nao pode virar R$ 0,00 sem ninguem perceber (zero digitado vale).
+     */
     public static long centavos(String s) {
+        if (vazio(s)) throw new RegraNegocioException("Informe o valor.");
         try {
             return numeroBR(s).movePointRight(2).longValueExact();
         } catch (ArithmeticException e) {

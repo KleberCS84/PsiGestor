@@ -21,7 +21,7 @@ public class CadastroService {
         exigirPsicologo();
         if (Validadores.vazio(s.getNome())) throw new RegraNegocioException("Informe o nome do servico.");
         if (s.getDuracaoMin() <= 0) throw new RegraNegocioException("A duracao deve ser maior que zero.");
-        if (s.getValorCentavos() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
+        validarValor(s.getValorCentavos());
         boolean novo = s.getId() == null;
         ctx.transacao(() -> {
             ctx.servicos.salvar(s);
@@ -33,7 +33,7 @@ public class CadastroService {
     public Convenio salvarConvenio(Convenio c) {
         exigirPsicologo();
         if (Validadores.vazio(c.getNome())) throw new RegraNegocioException("Informe o nome do convenio.");
-        if (c.getValorSessaoCentavos() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
+        validarValor(c.getValorSessaoCentavos());
         if (c.getPrazoPagamentoDias() < 0) throw new RegraNegocioException("O prazo nao pode ser negativo.");
         boolean novo = c.getId() == null;
         ctx.transacao(() -> {
@@ -50,6 +50,14 @@ public class CadastroService {
             ctx.usuarios.atualizarRepasse(usuarioId, percentualClinica);
             ctx.auditar("ALTERACAO_REPASSE", "usuario", usuarioId);
         });
+    }
+
+    /** Teto por sessao: um digito a mais por engano (R$ 2.000.000,00) nao entra no faturamento. */
+    static final long VALOR_MAXIMO_CENTAVOS = 10_000_000;   // R$ 100.000,00
+
+    private static void validarValor(long centavos) {
+        if (centavos < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
+        if (centavos > VALOR_MAXIMO_CENTAVOS) throw new RegraNegocioException("O valor maximo e R$ 100.000,00.");
     }
 
     /** Mesma faixa do CHECK do banco, com mensagem clara (tambem usada no cadastro de usuario). */

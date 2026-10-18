@@ -63,9 +63,18 @@ class ValidadoresTest {
         assertEquals(15000, Validadores.centavos("150.00"));
         assertEquals(8050, Validadores.centavos("80,5"));
         assertEquals(123456, Validadores.centavos("1.234,56"));
-        assertEquals(0, Validadores.centavos(""));
+        assertEquals(0, Validadores.centavos("0"));                                            // zero digitado vale
         assertThrows(RegraNegocioException.class, () -> Validadores.centavos("1,234"));        // 3 casas
         assertThrows(RegraNegocioException.class, () -> Validadores.centavos("99999999999999999999"));
+    }
+
+    /** B-4: preco em branco nao vira R$ 0,00 sem aviso. */
+    @Test
+    void centavosRecusaValorVazio() {
+        for (String vazio : new String[] { null, "", "   " }) {
+            RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> Validadores.centavos(vazio));
+            assertEquals("Informe o valor.", e.getMessage());
+        }
     }
 
     /** Antes: "NaN" passava (e passava na faixa 0..100 do repasse) e "1.234" virava 1234 sem aviso. */

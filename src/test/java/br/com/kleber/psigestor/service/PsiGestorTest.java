@@ -808,6 +808,49 @@ class PsiGestorTest {
         assertNull(ctx.getSessao());
     }
 
+    // ---------- revisao final: B-4, B-5 ----------
+    /** B-4: teto de R$ 100.000,00 por valor de servico e de convenio, valido para qualquer chamador. */
+    @Test
+    void valorDeServicoEConvenioTemTeto() {
+        long teto = CadastroService.VALOR_MAXIMO_CENTAVOS;
+        assertEquals(10_000_000, teto);
+        RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                () -> ctx.cadastros.salvarServico(new Servico("Caro", null, 50, teto + 1)));
+        assertEquals("O valor maximo e R$ 100.000,00.", e.getMessage());
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.cadastros.salvarConvenio(new Convenio("Caro", null, teto + 1, 30)));
+        assertDoesNotThrow(() -> ctx.cadastros.salvarServico(new Servico("No teto", null, 50, teto)));
+        assertDoesNotThrow(() -> ctx.cadastros.salvarConvenio(new Convenio("No teto", null, teto, 30)));
+    }
+
+    /** B-4: soma que estouraria o long vira erro, nunca um total negativo exibido como verdade. */
+    @Test
+    void somaDoFinanceiroNaoEstouraEmSilencio() throws SQLException {
+        LocalDate dia = LocalDate.of(2026, 10, 22);
+        Atendimento a1 = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(8, 0), Modalidade.PRESENCIAL, false);
+        Atendimento a2 = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(9, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(a1.getId(), StatusAtendimento.REALIZADO);
+        ctx.agenda.alterarStatus(a2.getId(), StatusAtendimento.REALIZADO);
+        // so um banco adulterado chega aqui (o service tem teto): dois valores perto do maximo do long
+        try (Statement st = ctx.getConexaoParaTeste().createStatement()) {
+            st.execute("UPDATE atendimento SET valor = " + (Long.MAX_VALUE / 2 + 1));
+        }
+        assertThrows(ArithmeticException.class, () -> ctx.financeiro.resumo(dia, dia));
+        assertThrows(ArithmeticException.class, () -> ctx.financeiro.repasse(dia, dia));
+    }
+
+    /** B-5: leituras de paciente/consentimento e da trilha exigem sessao. */
+    @Test
+    void leiturasSemSessaoSaoRecusadas() {
+        assertFalse(ctx.autenticacao.trilhaDeAcesso(10).isEmpty());   // com sessao: le
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.buscar(joao.getId()));
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.pacienteService.temConsentimento(joao.getId(), TipoConsentimento.ATENDIMENTO_ONLINE));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.consentimentos(joao.getId()));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.trilhaDeAcesso(10));
+    }
+
     // ---------- revisao final: M-6, M-5, M-4, M-3 ----------
     private String urlTeste() { return "jdbc:sqlite:" + tmp.resolve("teste.db"); }
 
