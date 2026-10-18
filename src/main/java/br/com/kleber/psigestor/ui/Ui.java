@@ -12,6 +12,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -28,7 +29,8 @@ public final class Ui {
 
     private Ui() { }
 
-    public static String moeda(double v) { return MOEDA.format(v); }
+    /** Dinheiro trafega em centavos (long); so aqui vira texto "R$ 1.234,56". */
+    public static String moeda(long centavos) { return MOEDA.format(BigDecimal.valueOf(centavos, 2)); }
 
     /** Coluna de tabela a partir de uma funcao (evita PropertyValueFactory e reflexao). */
     public static <T> TableColumn<T, String> col(String titulo, Function<T, Object> f, double largura) {

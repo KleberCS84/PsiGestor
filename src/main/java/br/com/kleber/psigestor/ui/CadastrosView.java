@@ -20,7 +20,7 @@ public class CadastrosView {
         servicos.getColumns().add(Ui.col("Servico", Servico::getNome, 260));
         servicos.getColumns().add(Ui.col("Codigo TUSS", Servico::getCodigoTuss, 120));
         servicos.getColumns().add(Ui.col("Duracao", s -> s.getDuracaoMin() + " min", 90));
-        servicos.getColumns().add(Ui.col("Valor particular", s -> Ui.moeda(s.getValor()), 130));
+        servicos.getColumns().add(Ui.col("Valor particular", s -> Ui.moeda(s.getValorCentavos()), 130));
         servicos.setPrefHeight(200);
 
         TextField sNome = new TextField();
@@ -40,13 +40,13 @@ public class CadastrosView {
         addServ.setOnAction(e -> {
             if (Ui.executar(() -> {
                 ctx.cadastros.salvarServico(new Servico(sNome.getText().trim(), vazioParaNull(sTuss.getText()),
-                        inteiro(sDur.getText()), Validadores.numeroBR(sValor.getText()).doubleValue()));
+                        inteiro(sDur.getText()), Validadores.centavos(sValor.getText())));
             })) { sNome.clear(); sTuss.clear(); sValor.clear(); carregar(); }
         });
 
         convenios.getColumns().add(Ui.col("Convenio", Convenio::getNome, 240));
         convenios.getColumns().add(Ui.col("Registro ANS", Convenio::getRegistroAns, 120));
-        convenios.getColumns().add(Ui.col("Valor por sessao", c -> Ui.moeda(c.getValorSessao()), 130));
+        convenios.getColumns().add(Ui.col("Valor por sessao", c -> Ui.moeda(c.getValorSessaoCentavos()), 130));
         convenios.getColumns().add(Ui.col("Prazo pagto.", c -> c.getPrazoPagamentoDias() + " dias", 110));
         convenios.setPrefHeight(200);
 
@@ -65,7 +65,7 @@ public class CadastrosView {
         addConv.setOnAction(e -> {
             if (Ui.executar(() -> {
                 ctx.cadastros.salvarConvenio(new Convenio(cNome.getText().trim(), vazioParaNull(cAns.getText()),
-                        Validadores.numeroBR(cValor.getText()).doubleValue(), inteiro(cPrazo.getText())));
+                        Validadores.centavos(cValor.getText()), inteiro(cPrazo.getText())));
             })) { cNome.clear(); cAns.clear(); cValor.clear(); carregar(); }
         });
 

@@ -41,7 +41,7 @@ public class FinanceiroView {
         lancamentos.getColumns().add(Ui.col("Paciente", Atendimento::getPacienteNome, 200));
         lancamentos.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 160));
         lancamentos.getColumns().add(Ui.col("Tipo", a -> a.getConvenioId() == null ? "Particular" : "Convenio", 90));
-        lancamentos.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValor()), 100));
+        lancamentos.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()), 100));
         lancamentos.getColumns().add(Ui.col("Pago", a -> a.isPago() ? a.getFormaPagamento() : "PENDENTE", 110));
         lancamentos.getColumns().add(Ui.col("Recibo", a -> a.getConvenioId() != null ? "n/a"
                 : a.isReciboEmitido() ? "Emitido" : "A emitir", 90));

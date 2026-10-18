@@ -56,6 +56,18 @@ class ValidadoresTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(Validadores.numeroBR(null)));
     }
 
+    /** M7: dinheiro digitado vira centavos exatos; nada de double no caminho. */
+    @Test
+    void centavosConverteSemPerderPrecisao() {
+        assertEquals(3333, Validadores.centavos("33,33"));
+        assertEquals(15000, Validadores.centavos("150.00"));
+        assertEquals(8050, Validadores.centavos("80,5"));
+        assertEquals(123456, Validadores.centavos("1.234,56"));
+        assertEquals(0, Validadores.centavos(""));
+        assertThrows(RegraNegocioException.class, () -> Validadores.centavos("1,234"));        // 3 casas
+        assertThrows(RegraNegocioException.class, () -> Validadores.centavos("99999999999999999999"));
+    }
+
     /** Antes: "NaN" passava (e passava na faixa 0..100 do repasse) e "1.234" virava 1234 sem aviso. */
     @Test
     void numeroBRRejeitaFormatosAmbiguosOuInvalidos() {

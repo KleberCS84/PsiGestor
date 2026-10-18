@@ -46,7 +46,7 @@ class PsiGestorTest {
         ana = ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte12".toCharArray(),
                 Papel.PSICOLOGO, "09/12345", 30);
         ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
-        sessao = ctx.servicos.salvar(new Servico("Psicoterapia individual", null, 50, 200));
+        sessao = ctx.servicos.salvar(new Servico("Psicoterapia individual", null, 50, 20000));
         joao = ctx.pacienteService.salvar(new Paciente("Joao Lima", LocalDate.of(1990, 5, 20), "62999990000"));
     }
 
@@ -285,12 +285,12 @@ class PsiGestorTest {
 
     @Test
     void valorDoConvenioSubstituiValorParticular() {
-        Convenio c = ctx.convenios.salvar(new Convenio("Unimed Teste", "123456", 90, 30));
+        Convenio c = ctx.convenios.salvar(new Convenio("Unimed Teste", "123456", 9000, 30));
         joao.setConvenioId(c.getId());
         ctx.pacienteService.salvar(joao);
         Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
                 LocalDateTime.of(2026, 10, 15, 8, 0), Modalidade.PRESENCIAL, true);
-        assertEquals(90, a.getValor());
+        assertEquals(9000, a.getValorCentavos());
     }
 
     // ---------- A3: maquina de estados do status ----------
@@ -330,7 +330,7 @@ class PsiGestorTest {
         assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(999, "PIX"));
         assertThrows(RegraNegocioException.class, () -> ctx.agenda.marcarReciboEmitido(999));
         assertTrue(ctx.logs.ultimos(10).stream().noneMatch(l -> l.acao().equals("PAGAMENTO")));
-        Convenio fantasma = new Convenio("Fantasma", null, 90, 30);
+        Convenio fantasma = new Convenio("Fantasma", null, 9000, 30);
         fantasma.setId(999);
         assertThrows(RegraNegocioException.class, () -> ctx.convenios.salvar(fantasma));
     }
@@ -356,7 +356,7 @@ class PsiGestorTest {
     // ---------- convenio: CHECK em prazo_pagamento_dias ----------
     @Test
     void prazoDePagamentoNegativoERecusadoPeloBanco() {
-        assertThrows(DaoException.class, () -> ctx.convenios.salvar(new Convenio("Negativo", null, 90, -1)));
+        assertThrows(DaoException.class, () -> ctx.convenios.salvar(new Convenio("Negativo", null, 9000, -1)));
     }
 
     // ---------- pacientes ----------
@@ -395,15 +395,132 @@ class PsiGestorTest {
         ctx.agenda.alterarStatus(a3.getId(), StatusAtendimento.FALTOU);
 
         FinanceiroService.Resumo r = ctx.financeiro.resumo(dia, dia);
-        assertEquals(400, r.faturado());
-        assertEquals(200, r.recebido());
-        assertEquals(200, r.aReceber());
+        assertEquals(40000, r.faturado());
+        assertEquals(20000, r.recebido());
+        assertEquals(20000, r.aReceber());
         assertEquals(1, r.faltas());
         assertEquals(1, r.recibosPendentes());
 
         FinanceiroService.LinhaRepasse l = ctx.financeiro.repasse(dia, dia).get(0);
-        assertEquals(120, l.parteClinica());       // 30% de 400
-        assertEquals(280, l.liquidoProfissional());
+        assertEquals(12000, l.parteClinica());     // 30% de R$ 400,00
+        assertEquals(28000, l.liquidoProfissional());
+    }
+
+    /** M7: em double, 33.33 + 33.33 + 33.33 nao da 99.99 exato; em centavos da. */
+    @Test
+    void tresSessoesDe3333Somam9999() {
+        Servico curta = ctx.servicos.salvar(new Servico("Sessao curta", null, 50, 3333));
+        LocalDate dia = LocalDate.of(2026, 10, 21);
+        for (int hora = 8; hora <= 10; hora++) {
+            Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), curta.getId(), dia.atTime(hora, 0), Modalidade.PRESENCIAL, false);
+            ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.REALIZADO);
+        }
+        assertEquals(9999, ctx.financeiro.resumo(dia, dia).faturado());   // R$ 99,99
+
+        FinanceiroService.LinhaRepasse l = ctx.financeiro.repasse(dia, dia).get(0);
+        assertEquals(9999, l.bruto());
+        assertEquals(3000, l.parteClinica());                               // 30% = 2999,7 centavos
+        assertEquals(6999, l.liquidoProfissional());
+        assertEquals(l.bruto(), l.parteClinica() + l.liquidoProfissional());
+    }
+
+    /** M7: meio centavo arredonda para o par (HALF_EVEN), nem sempre para cima. */
+    @Test
+    void repasseArredondaMeioCentavoParaOPar() {
+        assertEquals(5000, FinanceiroService.parteClinica(9999, 50));   // 4999,5 -> 5000
+        assertEquals(4998, FinanceiroService.parteClinica(9997, 50));   // 4998,5 -> 4998
+        assertEquals(0, FinanceiroService.parteClinica(1, 50));         // 0,5 -> 0
+        assertEquals(750, FinanceiroService.parteClinica(10000, 7.5));
+    }
+
+    /** M7: banco v4 (REAL, em reais) vira INTEGER em centavos sem perder vinculos. */
+    @Test
+    void migracaoV5ConverteReaisParaCentavos() throws SQLException {
+        int servicoId = sessao.getId();
+        ctx.close();
+
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (Connection con = DriverManager.getConnection(url); Statement st = con.createStatement()) {
+            st.execute("DROP TABLE atendimento");
+            st.execute("DROP TABLE servico");
+            st.execute("DROP TABLE convenio");
+            st.execute("""
+                CREATE TABLE convenio (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL UNIQUE,
+                    registro_ans TEXT, valor_sessao REAL NOT NULL DEFAULT 0 CHECK (valor_sessao >= 0),
+                    prazo_pagamento_dias INTEGER NOT NULL DEFAULT 30)""");
+            st.execute("""
+                CREATE TABLE servico (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, codigo_tuss TEXT,
+                    duracao_min INTEGER NOT NULL DEFAULT 50 CHECK (duracao_min > 0),
+                    valor REAL NOT NULL DEFAULT 0 CHECK (valor >= 0))""");
+            st.execute("""
+                CREATE TABLE atendimento (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    paciente_id INTEGER NOT NULL REFERENCES paciente(id) ON DELETE RESTRICT,
+                    profissional_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
+                    servico_id INTEGER NOT NULL REFERENCES servico(id) ON DELETE RESTRICT,
+                    convenio_id INTEGER REFERENCES convenio(id) ON DELETE SET NULL,
+                    inicio TEXT NOT NULL, fim TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'AGENDADO',
+                    modalidade TEXT NOT NULL DEFAULT 'PRESENCIAL', valor REAL NOT NULL DEFAULT 0,
+                    pago INTEGER NOT NULL DEFAULT 0, forma_pagamento TEXT,
+                    recibo_emitido INTEGER NOT NULL DEFAULT 0, CHECK (fim > inicio))""");
+            st.execute("INSERT INTO convenio (id, nome, valor_sessao) VALUES (7, 'Unimed', 80.5)");
+            st.execute("INSERT INTO servico (id, nome, valor) VALUES (" + servicoId + ", 'Psicoterapia', 33.33)");
+            st.execute("INSERT INTO atendimento (paciente_id, profissional_id, servico_id, convenio_id, inicio, fim, valor) "
+                    + "VALUES (" + joao.getId() + ", " + ana.getId() + ", " + servicoId + ", 7, "
+                    + "'2026-10-20T08:00', '2026-10-20T08:50', 150.0)");
+            st.execute("PRAGMA user_version = 4");
+        }
+
+        ctx = new Contexto(url);                                   // migracao v5 roda aqui
+        Connection c = ctx.getConexaoParaTeste();
+        assertEquals(3333, ctx.servicos.buscar(servicoId).orElseThrow().getValorCentavos());
+        assertEquals(8050, ctx.convenios.listar().get(0).getValorSessaoCentavos());
+        try (Statement st = c.createStatement()) {
+            try (ResultSet rs = st.executeQuery("SELECT valor, typeof(valor), servico_id, convenio_id FROM atendimento")) {
+                assertTrue(rs.next());
+                assertEquals(15000, rs.getLong(1));
+                assertEquals("integer", rs.getString(2));
+                assertEquals(servicoId, rs.getInt(3));
+                assertEquals(7, rs.getInt(4));
+            }
+            for (String[] tc : new String[][] {{"servico", "valor"}, {"convenio", "valor_sessao"}, {"atendimento", "valor"}}) {
+                try (ResultSet rs = st.executeQuery("SELECT type FROM pragma_table_info('" + tc[0] + "') WHERE name = '" + tc[1] + "'")) {
+                    assertTrue(rs.next());
+                    assertEquals("INTEGER", rs.getString(1), tc[0] + "." + tc[1]);
+                }
+            }
+            try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) { assertFalse(rs.next()); }
+            try (ResultSet rs = st.executeQuery("PRAGMA foreign_keys")) { assertTrue(rs.next()); assertEquals(1, rs.getInt(1)); }
+            try (ResultSet rs = st.executeQuery("SELECT count(*) FROM sqlite_master WHERE name = 'idx_atendimento_inicio'")) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1));
+            }
+        }
+        // tabela recriada pelo schema.sql: o CHECK do prazo substitui as triggers da v2
+        assertThrows(DaoException.class, () -> ctx.convenios.salvar(new Convenio("Negativo", null, 100, -1)));
+    }
+
+    // ---------- B5 / B9 ----------
+    /** B5: sem permissao, nem a existencia do login e revelada. */
+    @Test
+    void cadastrarSemSessaoNaoRevelaLoginExistente() {
+        ctx.sair();
+        RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.cadastrar(
+                "Outra Ana", "ana", "senhaForte12".toCharArray(), Papel.SECRETARIA, null, 0));
+        assertFalse(e.getMessage().contains("Ja existe"), e.getMessage());
+    }
+
+    /** B9: % e _ digitados na busca sao texto literal, nao curinga. */
+    @Test
+    void pesquisaTrataPercentualESublinhadoComoTexto() {
+        ctx.pacienteService.salvar(new Paciente("Maria_Clara", LocalDate.of(1990, 5, 20), "62999990001"));
+        ctx.pacienteService.salvar(new Paciente("Maria Clara", LocalDate.of(1990, 5, 20), "62999990002"));
+        assertEquals(List.of("Maria_Clara"),
+                ctx.pacienteService.pesquisar("_", true).stream().map(Paciente::getNome).toList());
+        assertEquals(List.of("Maria_Clara"),
+                ctx.pacienteService.pesquisar("a_C", true).stream().map(Paciente::getNome).toList());
+        assertTrue(ctx.pacienteService.pesquisar("%", true).isEmpty());
+        assertTrue(ctx.pacienteService.pesquisar("\\", true).isEmpty());
+        assertEquals(3, ctx.pacienteService.pesquisar("", true).size());
     }
 
     @Test
@@ -541,17 +658,17 @@ class PsiGestorTest {
         ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
         ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
         assertThrows(RegraNegocioException.class, () ->
-                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 10)));
+                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 1000)));
         assertThrows(RegraNegocioException.class, () ->
-                ctx.cadastros.salvarConvenio(new Convenio("Barato", null, 1, 30)));
+                ctx.cadastros.salvarConvenio(new Convenio("Barato", null, 100, 30)));
         assertThrows(RegraNegocioException.class, () -> ctx.cadastros.atualizarRepasse(ana.getId(), 0));
         assertFalse(ctx.cadastros.listarServicos().isEmpty());   // ver continua permitido
     }
 
     @Test
     void psicologoAlteraCadastrosComAuditoria() {
-        ctx.cadastros.salvarServico(new Servico("Avaliacao", "50000470", 50, 250));
-        Convenio c = ctx.cadastros.salvarConvenio(new Convenio("Unimed Teste", "123456", 90, 30));
+        ctx.cadastros.salvarServico(new Servico("Avaliacao", "50000470", 50, 25000));
+        Convenio c = ctx.cadastros.salvarConvenio(new Convenio("Unimed Teste", "123456", 9000, 30));
         ctx.cadastros.salvarConvenio(c);
         ctx.cadastros.atualizarRepasse(ana.getId(), 40);
         var acoes = ctx.logs.ultimos(10).stream().map(l -> l.acao()).toList();
@@ -571,7 +688,7 @@ class PsiGestorTest {
     void cadastrosExigemSessao() {
         ctx.sair();
         assertThrows(RegraNegocioException.class, () ->
-                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 10)));
+                ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 1000)));
         assertThrows(RegraNegocioException.class, () -> ctx.cadastros.listarConvenios());
     }
 
@@ -865,7 +982,7 @@ class PsiGestorTest {
         p.setConvenioId(999);
         RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(p));
         assertEquals("Convenio nao encontrado.", e.getMessage());
-        Convenio c = ctx.convenios.salvar(new Convenio("Unimed", null, 90, 30));
+        Convenio c = ctx.convenios.salvar(new Convenio("Unimed", null, 9000, 30));
         p.setConvenioId(c.getId());
         assertDoesNotThrow(() -> ctx.pacienteService.salvar(p));
     }

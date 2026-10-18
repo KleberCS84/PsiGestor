@@ -64,9 +64,9 @@ public class AgendaService {
                     .filter(c -> c.getId().equals(paciente.getConvenioId())).findFirst()
                     .orElseThrow(() -> new RegraNegocioException("Convenio nao encontrado."));
             a.setConvenioId(conv.getId());
-            a.setValor(conv.getValorSessao());
+            a.setValorCentavos(conv.getValorSessaoCentavos());
         } else {
-            a.setValor(servico.getValor());
+            a.setValorCentavos(servico.getValorCentavos());
         }
         ctx.transacao(() -> {
             ctx.atendimentos.inserir(a);

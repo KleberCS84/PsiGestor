@@ -5,15 +5,15 @@ public class Servico {
     private String nome;
     private String codigoTuss;
     private int duracaoMin = 50;
-    private double valor;
+    private long valorCentavos;   // dinheiro sempre em centavos (M7)
 
     public Servico() { }
 
-    public Servico(String nome, String codigoTuss, int duracaoMin, double valor) {
+    public Servico(String nome, String codigoTuss, int duracaoMin, long valorCentavos) {
         this.nome = nome;
         this.codigoTuss = codigoTuss;
         this.duracaoMin = duracaoMin;
-        this.valor = valor;
+        this.valorCentavos = valorCentavos;
     }
 
     public Integer getId() { return id; }
@@ -24,8 +24,8 @@ public class Servico {
     public void setCodigoTuss(String codigoTuss) { this.codigoTuss = codigoTuss; }
     public int getDuracaoMin() { return duracaoMin; }
     public void setDuracaoMin(int duracaoMin) { this.duracaoMin = duracaoMin; }
-    public double getValor() { return valor; }
-    public void setValor(double valor) { this.valor = valor; }
+    public long getValorCentavos() { return valorCentavos; }
+    public void setValorCentavos(long valorCentavos) { this.valorCentavos = valorCentavos; }
 
     @Override public String toString() { return nome + " (" + duracaoMin + " min)"; }
 }

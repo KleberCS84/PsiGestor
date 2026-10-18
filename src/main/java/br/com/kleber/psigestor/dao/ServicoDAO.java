@@ -22,7 +22,7 @@ public class ServicoDAO {
             ps.setString(1, s.getNome());
             ps.setString(2, s.getCodigoTuss());
             ps.setInt(3, s.getDuracaoMin());
-            ps.setDouble(4, s.getValor());
+            ps.setLong(4, s.getValorCentavos());
             if (!novo) ps.setInt(5, s.getId());
             if (ps.executeUpdate() != 1) throw new RegraNegocioException("Servico nao encontrado.");
             if (novo) s.setId(JdbcUtil.ultimoId(ps));
@@ -40,7 +40,7 @@ public class ServicoDAO {
              ResultSet rs = st.executeQuery("SELECT * FROM servico ORDER BY nome")) {
             while (rs.next()) {
                 Servico s = new Servico(rs.getString("nome"), rs.getString("codigo_tuss"),
-                        rs.getInt("duracao_min"), rs.getDouble("valor"));
+                        rs.getInt("duracao_min"), rs.getLong("valor"));
                 s.setId(rs.getInt("id"));
                 lista.add(s);
             }

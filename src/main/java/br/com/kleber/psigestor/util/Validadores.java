@@ -61,4 +61,13 @@ public final class Validadores {
         }
         throw new RegraNegocioException("Valor invalido: " + s);
     }
+
+    /** Valor em reais digitado -> centavos. numeroBR ja limita a 2 casas, entao a conversao e exata. */
+    public static long centavos(String s) {
+        try {
+            return numeroBR(s).movePointRight(2).longValueExact();
+        } catch (ArithmeticException e) {
+            throw new RegraNegocioException("Valor muito grande: " + s);
+        }
+    }
 }

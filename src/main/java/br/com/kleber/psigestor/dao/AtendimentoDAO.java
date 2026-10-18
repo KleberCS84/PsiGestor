@@ -42,7 +42,7 @@ public class AtendimentoDAO {
             ps.setString(6, a.getFim().format(FMT));
             ps.setString(7, a.getStatus().name());
             ps.setString(8, a.getModalidade().name());
-            ps.setDouble(9, a.getValor());
+            ps.setLong(9, a.getValorCentavos());
             ps.setInt(10, a.isPago() ? 1 : 0);
             ps.setString(11, a.getFormaPagamento());
             ps.setInt(12, a.isReciboEmitido() ? 1 : 0);
@@ -90,7 +90,7 @@ public class AtendimentoDAO {
             ps.setString(2, fim.format(FMT));
             ps.setString(3, inicio.format(FMT));
             ps.setInt(4, ignorarId == null ? -1 : ignorarId);
-            try (ResultSet rs = ps.executeQuery()) { return rs.getInt(1); }
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
         } catch (SQLException e) { throw new DaoException("Erro ao verificar agenda", e); }
     }
 
@@ -127,7 +127,7 @@ public class AtendimentoDAO {
                 a.setFim(LocalDateTime.parse(rs.getString("fim"), FMT));
                 a.setStatus(StatusAtendimento.valueOf(rs.getString("status")));
                 a.setModalidade(Modalidade.valueOf(rs.getString("modalidade")));
-                a.setValor(rs.getDouble("valor"));
+                a.setValorCentavos(rs.getLong("valor"));
                 a.setPago(rs.getInt("pago") == 1);
                 a.setFormaPagamento(rs.getString("forma_pagamento"));
                 a.setReciboEmitido(rs.getInt("recibo_emitido") == 1);

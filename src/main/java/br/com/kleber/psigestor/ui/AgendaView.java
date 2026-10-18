@@ -46,7 +46,7 @@ public class AgendaView {
         tabela.getColumns().add(Ui.col("Servico", Atendimento::getServicoNome, 160));
         tabela.getColumns().add(Ui.col("Modalidade", Atendimento::getModalidade, 95));
         tabela.getColumns().add(Ui.col("Status", Atendimento::getStatus, 100));
-        tabela.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValor()) + (a.getConvenioId() != null ? " (conv.)" : ""), 110));
+        tabela.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()) + (a.getConvenioId() != null ? " (conv.)" : ""), 110));
         tabela.getColumns().add(Ui.col("Pago", a -> a.isPago() ? "Sim - " + a.getFormaPagamento() : "Nao", 100));
         tabela.getColumns().add(Ui.col("Recibo", a -> a.isReciboEmitido() ? "Emitido" : "-", 80));
 
@@ -84,7 +84,7 @@ public class AgendaView {
 
     private void pagamento(Atendimento a) {
         ChoiceDialog<String> d = new ChoiceDialog<>("PIX", AgendaService.FORMAS_PAGAMENTO);
-        d.setHeaderText("Pagamento de " + a.getPacienteNome() + " - " + Ui.moeda(a.getValor()));
+        d.setHeaderText("Pagamento de " + a.getPacienteNome() + " - " + Ui.moeda(a.getValorCentavos()));
         d.setTitle("Registrar pagamento");
         d.showAndWait().ifPresent(forma -> Ui.executar(() -> ctx.agenda.registrarPagamento(a.getId(), forma)));
     }

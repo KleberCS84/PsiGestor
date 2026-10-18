@@ -28,8 +28,9 @@ public class Database implements AutoCloseable {
      *  v2: convenio.prazo_pagamento_dias >= 0 (triggers: SQLite nao acrescenta CHECK em tabela existente)
      *  v3: log_acesso.detalhe (login tentado nas falhas de login)
      *  v4: usuario.iteracoes (contagem do PBKDF2 por usuario; existentes = 210000)
+     *  v5: dinheiro em centavos: convenio.valor_sessao, servico.valor, atendimento.valor REAL -> INTEGER
      */
-    public static final int VERSAO_ESQUEMA = 4;
+    public static final int VERSAO_ESQUEMA = 5;
     private static final String PREFIXO_URL = "jdbc:sqlite:";
 
     private final String url;
@@ -71,10 +72,12 @@ public class Database implements AutoCloseable {
         int versao;
         try (Statement st = conexao.createStatement();
              ResultSet rs = st.executeQuery("PRAGMA user_version")) {
-            versao = rs.getInt(1);
+            versao = rs.next() ? rs.getInt(1) : 0;
         }
         if (versao >= VERSAO_ESQUEMA) return;
 
+        // v5 recria tabelas referenciadas por FK; o pragma so tem efeito fora de transacao
+        try (Statement st = conexao.createStatement()) { st.execute("PRAGMA foreign_keys = OFF"); }
         conexao.setAutoCommit(false);   // ou a migracao inteira entra, ou nada entra
         try (Statement st = conexao.createStatement()) {
             if (versao < 1) {
@@ -99,6 +102,15 @@ public class Database implements AutoCloseable {
                 // usuarios ja cadastrados foram derivados com 210.000; o login seguinte migra para o atual
                 adicionarColunaSeFaltar(st, "usuario", "iteracoes", "INTEGER NOT NULL DEFAULT 210000");
             }
+            if (versao < 5) {
+                converterParaCentavos(st, "convenio", "valor_sessao");
+                converterParaCentavos(st, "servico", "valor");
+                if (converterParaCentavos(st, "atendimento", "valor"))
+                    st.execute("CREATE INDEX IF NOT EXISTS idx_atendimento_inicio ON atendimento(inicio)");
+            }
+            try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
+                if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));
+            }
             st.execute("PRAGMA user_version = " + VERSAO_ESQUEMA);
             conexao.commit();
         } catch (SQLException e) {
@@ -106,7 +118,44 @@ public class Database implements AutoCloseable {
             throw e;
         } finally {
             conexao.setAutoCommit(true);
+            try (Statement st = conexao.createStatement()) { st.execute("PRAGMA foreign_keys = ON"); }
         }
+    }
+
+    /**
+     * SQLite nao muda o tipo de coluna: recria a tabela com a definicao atual do schema.sql
+     * (unica fonte da verdade) e copia os dados, reais -> centavos. Ids preservados, entao as FKs
+     * continuam validas. Banco novo ja nasce INTEGER e nao passa por aqui. Devolve se converteu.
+     */
+    private boolean converterParaCentavos(Statement st, String tabela, String coluna) throws SQLException {
+        List<String> colunas = new ArrayList<>();
+        boolean real = false;
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info(" + tabela + ")")) {
+            while (rs.next()) {
+                String nome = rs.getString("name");
+                colunas.add(nome);
+                if (nome.equalsIgnoreCase(coluna)) real = rs.getString("type").equalsIgnoreCase("REAL");
+            }
+        }
+        if (!real) return false;
+
+        String prefixo = "CREATE TABLE IF NOT EXISTS " + tabela + " (";
+        String definicao = lerComandos("/db/schema.sql").stream()
+                .map(String::trim)
+                .filter(c -> c.startsWith(prefixo))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Tabela fora do schema.sql: " + tabela));
+        String nova = tabela + "_v5";
+        st.execute("CREATE TABLE " + nova + " (" + definicao.substring(prefixo.length()));
+
+        String lista = String.join(", ", colunas);
+        String origem = String.join(", ", colunas.stream()
+                .map(c -> c.equalsIgnoreCase(coluna) ? "CAST(ROUND(" + c + " * 100) AS INTEGER)" : c)
+                .toList());
+        st.execute("INSERT INTO " + nova + " (" + lista + ") SELECT " + origem + " FROM " + tabela);
+        st.execute("DROP TABLE " + tabela);
+        st.execute("ALTER TABLE " + nova + " RENAME TO " + tabela);
+        return true;
     }
 
     /** Banco novo ja nasce com a coluna (schema.sql); banco antigo ganha a coluna aqui. */

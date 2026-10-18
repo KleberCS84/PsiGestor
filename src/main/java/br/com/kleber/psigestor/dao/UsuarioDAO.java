@@ -112,7 +112,7 @@ public class UsuarioDAO {
     public int contar() {
         try (Statement st = con.createStatement();
              ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM usuario")) {
-            return rs.getInt(1);
+            return rs.next() ? rs.getInt(1) : 0;
         } catch (SQLException e) { throw new DaoException("Erro ao contar usuarios", e); }
     }
 

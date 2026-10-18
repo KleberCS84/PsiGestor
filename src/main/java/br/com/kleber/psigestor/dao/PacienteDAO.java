@@ -57,7 +57,7 @@ public class PacienteDAO {
                 "SELECT COUNT(*) FROM paciente WHERE cpf = ? AND id <> ?")) {
             ps.setString(1, cpf);
             ps.setInt(2, ignorarId == null ? -1 : ignorarId);
-            try (ResultSet rs = ps.executeQuery()) { return rs.getInt(1) > 0; }
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() && rs.getInt(1) > 0; }
         } catch (SQLException e) { throw new DaoException("Erro ao verificar CPF", e); }
     }
 
@@ -95,16 +95,21 @@ public class PacienteDAO {
 
     /** Busca por parte do nome (LIKE), incluindo ou nao os arquivados. */
     public List<Paciente> pesquisar(String trechoNome, boolean incluirArquivados) {
-        String sql = "SELECT * FROM paciente WHERE nome LIKE ? "
+        String sql = "SELECT * FROM paciente WHERE nome LIKE ? ESCAPE '\\' "
                 + (incluirArquivados ? "" : "AND arquivado = 0 ") + "ORDER BY nome";
         List<Paciente> lista = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, "%" + (trechoNome == null ? "" : trechoNome.trim()) + "%");
+            ps.setString(1, "%" + escaparLike(trechoNome == null ? "" : trechoNome.trim()) + "%");
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) lista.add(mapear(rs));
             }
         } catch (SQLException e) { throw new DaoException("Erro ao pesquisar pacientes", e); }
         return lista;
+    }
+
+    /** % e _ digitados sao texto, nao curinga. A barra vai primeiro para nao escapar o escape. */
+    static String escaparLike(String s) {
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private Paciente mapear(ResultSet rs) throws SQLException {

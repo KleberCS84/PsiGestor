@@ -21,7 +21,7 @@ public class CadastroService {
         exigirPsicologo();
         if (Validadores.vazio(s.getNome())) throw new RegraNegocioException("Informe o nome do servico.");
         if (s.getDuracaoMin() <= 0) throw new RegraNegocioException("A duracao deve ser maior que zero.");
-        if (s.getValor() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
+        if (s.getValorCentavos() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
         boolean novo = s.getId() == null;
         ctx.transacao(() -> {
             ctx.servicos.salvar(s);
@@ -33,7 +33,7 @@ public class CadastroService {
     public Convenio salvarConvenio(Convenio c) {
         exigirPsicologo();
         if (Validadores.vazio(c.getNome())) throw new RegraNegocioException("Informe o nome do convenio.");
-        if (c.getValorSessao() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
+        if (c.getValorSessaoCentavos() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
         if (c.getPrazoPagamentoDias() < 0) throw new RegraNegocioException("O prazo nao pode ser negativo.");
         boolean novo = c.getId() == null;
         ctx.transacao(() -> {

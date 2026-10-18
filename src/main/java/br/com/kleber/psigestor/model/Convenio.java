@@ -4,15 +4,15 @@ public class Convenio {
     private Integer id;
     private String nome;
     private String registroAns;
-    private double valorSessao;
+    private long valorSessaoCentavos;   // centavos (M7)
     private int prazoPagamentoDias = 30;
 
     public Convenio() { }
 
-    public Convenio(String nome, String registroAns, double valorSessao, int prazoPagamentoDias) {
+    public Convenio(String nome, String registroAns, long valorSessaoCentavos, int prazoPagamentoDias) {
         this.nome = nome;
         this.registroAns = registroAns;
-        this.valorSessao = valorSessao;
+        this.valorSessaoCentavos = valorSessaoCentavos;
         this.prazoPagamentoDias = prazoPagamentoDias;
     }
 
@@ -22,8 +22,8 @@ public class Convenio {
     public void setNome(String nome) { this.nome = nome; }
     public String getRegistroAns() { return registroAns; }
     public void setRegistroAns(String registroAns) { this.registroAns = registroAns; }
-    public double getValorSessao() { return valorSessao; }
-    public void setValorSessao(double valorSessao) { this.valorSessao = valorSessao; }
+    public long getValorSessaoCentavos() { return valorSessaoCentavos; }
+    public void setValorSessaoCentavos(long v) { this.valorSessaoCentavos = v; }
     public int getPrazoPagamentoDias() { return prazoPagamentoDias; }
     public void setPrazoPagamentoDias(int d) { this.prazoPagamentoDias = d; }
 

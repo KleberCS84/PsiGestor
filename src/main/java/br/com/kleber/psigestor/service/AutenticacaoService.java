@@ -24,6 +24,8 @@ public class AutenticacaoService {
     static final Duration BLOQUEIO_MAXIMO = Duration.ofMinutes(15);
     /** Tamanho maximo de log_acesso.detalhe nas falhas de login. */
     static final int DETALHE_MAXIMO = 40;
+    /** Salt descartavel para o PBKDF2 de login inexistente/inativo (B5). Nunca gravado. */
+    private static final String SALT_FICTICIO = Criptografia.novoSalt();
 
     private final Contexto ctx;
     /** Por login digitado (existente ou nao). Em memoria: reabrir o app zera, aceitavel em desktop. */
@@ -40,6 +42,15 @@ public class AutenticacaoService {
 
     public Usuario cadastrar(String nome, String login, char[] senha, Papel papel, String crp,
                              double percentualRepasseClinica) {
+        // Apenas o primeiro usuario se cadastra sem login; depois, so um psicologo cadastra outros.
+        // Vem antes de tudo: sem permissao, nem "login ja existe" pode ser respondido (enumeracao).
+        if (!primeiroAcesso()) {
+            var s = ctx.exigirSessao();
+            if (!s.usuario().isPsicologo())
+                throw new RegraNegocioException("Somente psicologos podem cadastrar usuarios.");
+        } else if (papel != Papel.PSICOLOGO) {
+            throw new RegraNegocioException("O primeiro usuario deve ser o psicologo responsavel.");
+        }
         if (Validadores.vazio(nome) || Validadores.vazio(login))
             throw new RegraNegocioException("Nome e login sao obrigatorios.");
         if (senha == null || senha.length < SENHA_MINIMA)
@@ -48,14 +59,6 @@ public class AutenticacaoService {
             throw new RegraNegocioException("Informe o numero do CRP do psicologo.");
         if (ctx.usuarios.buscarPorLogin(login.trim()).isPresent())
             throw new RegraNegocioException("Ja existe um usuario com esse login.");
-        // Apenas o primeiro usuario se cadastra sem login; depois, so um psicologo cadastra outros.
-        if (!primeiroAcesso()) {
-            var s = ctx.exigirSessao();
-            if (!s.usuario().isPsicologo())
-                throw new RegraNegocioException("Somente psicologos podem cadastrar usuarios.");
-        } else if (papel != Papel.PSICOLOGO) {
-            throw new RegraNegocioException("O primeiro usuario deve ser o psicologo responsavel.");
-        }
 
         Usuario u = new Usuario(nome.trim(), login.trim(), papel, papel == Papel.PSICOLOGO ? crp.trim() : null);
         u.setIteracoes(Criptografia.ITERACOES_ATUAL);
@@ -91,6 +94,10 @@ public class AutenticacaoService {
                 ctx.logs.registrar(uid, "LOGIN_BLOQUEADO", "usuario", null, detalhe);
                 long seg = Math.max(1, Duration.between(agora, t.bloqueadoAte).toSeconds());
                 throw new RegraNegocioException("Muitas tentativas. Tente novamente em " + seg + " s.");
+            }
+            if (u == null) {
+                // mesmo custo de uma senha errada: o tempo de resposta nao revela se o login existe
+                Criptografia.hashSenha(senha == null ? new char[0] : senha, SALT_FICTICIO, Criptografia.ITERACOES_ATUAL);
             }
             if (u == null || !Criptografia.senhaConfere(senha, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 registrarFalha(chaveTentativa, agora);

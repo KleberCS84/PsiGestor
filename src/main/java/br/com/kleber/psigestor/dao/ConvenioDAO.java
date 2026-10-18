@@ -20,7 +20,7 @@ public class ConvenioDAO {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, c.getNome());
             ps.setString(2, c.getRegistroAns());
-            ps.setDouble(3, c.getValorSessao());
+            ps.setLong(3, c.getValorSessaoCentavos());
             ps.setInt(4, c.getPrazoPagamentoDias());
             if (!novo) ps.setInt(5, c.getId());
             if (ps.executeUpdate() != 1) throw new RegraNegocioException("Convenio nao encontrado.");
@@ -35,7 +35,7 @@ public class ConvenioDAO {
              ResultSet rs = st.executeQuery("SELECT * FROM convenio ORDER BY nome")) {
             while (rs.next()) {
                 Convenio c = new Convenio(rs.getString("nome"), rs.getString("registro_ans"),
-                        rs.getDouble("valor_sessao"), rs.getInt("prazo_pagamento_dias"));
+                        rs.getLong("valor_sessao"), rs.getInt("prazo_pagamento_dias"));
                 c.setId(rs.getInt("id"));
                 lista.add(c);
             }

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS convenio (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     nome                  TEXT NOT NULL UNIQUE,
     registro_ans          TEXT,
-    valor_sessao          REAL NOT NULL DEFAULT 0 CHECK (valor_sessao >= 0),
+    valor_sessao          INTEGER NOT NULL DEFAULT 0 CHECK (valor_sessao >= 0),  -- centavos
     prazo_pagamento_dias  INTEGER NOT NULL DEFAULT 30 CHECK (prazo_pagamento_dias >= 0)
 );
 
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS servico (
     nome          TEXT    NOT NULL,
     codigo_tuss   TEXT,                       -- digitado pelo usuario (ver docs/PONTOS_DE_ATENCAO_LEGAIS.md)
     duracao_min   INTEGER NOT NULL DEFAULT 50 CHECK (duracao_min > 0),
-    valor         REAL    NOT NULL DEFAULT 0 CHECK (valor >= 0)
+    valor         INTEGER NOT NULL DEFAULT 0 CHECK (valor >= 0)   -- centavos
 );
 
 CREATE TABLE IF NOT EXISTS paciente (
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS atendimento (
     status           TEXT NOT NULL DEFAULT 'AGENDADO'
                      CHECK (status IN ('AGENDADO','CONFIRMADO','REALIZADO','FALTOU','CANCELADO')),
     modalidade       TEXT NOT NULL DEFAULT 'PRESENCIAL' CHECK (modalidade IN ('PRESENCIAL','ONLINE')),
-    valor            REAL NOT NULL DEFAULT 0,
+    valor            INTEGER NOT NULL DEFAULT 0,   -- centavos, copiado do servico/convenio
     pago             INTEGER NOT NULL DEFAULT 0,
     forma_pagamento  TEXT,
     recibo_emitido   INTEGER NOT NULL DEFAULT 0,  -- marcado apos emitir no Receita Saude

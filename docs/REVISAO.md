@@ -8,13 +8,16 @@ Nada foi executado; tudo o que esta listado vem de leitura do codigo. Itens marc
 
 O projeto tem uma base boa de privacidade: AES-256-GCM com IV aleatorio por registro, chave de dados (DEK) por psicologo embrulhada por uma chave derivada da senha (PBKDF2), prontuario append-only com triggers, trilha de auditoria e nenhuma chave hardcoded. Nao ha SQL injection (tudo usa `PreparedStatement`; a unica concatenacao e o `VACUUM INTO`, com escape de aspas).
 
-Os problemas mais relevantes estao fora da criptografia em si:
+Estado atual (apos as correcoes registradas na secao 2):
 
-1. **Conversao de numeros quebrada** (`CadastrosView.numero`): `"150.00"` vira `15000`, `"7.5"` (percentual de repasse) vira `75`. Afeta precos de servico, valor de convenio e % de repasse, com impacto financeiro silencioso.
-2. **Regras de autorizacao so na interface**: cadastro de servicos/convenios e alteracao de % de repasse chamam o DAO direto, sem `exigirSessao`, sem checar papel e sem auditoria. Nao existe como desativar um usuario (a coluna `ativo` nunca e escrita).
-3. **LGPD**: dados cadastrais (CPF, telefone, e-mail, nascimento, contato de emergencia) e a agenda ficam em texto puro no banco, no backup e no relatorio TXT exportado; nao ha anonimizacao/eliminacao apos o prazo de guarda; nao ha bloqueio por inatividade nem limite de tentativas de login; a senha minima de 8 caracteres e a unica protecao do prontuario contra ataque offline ao arquivo `.db`.
+1. **Financeiro confiavel**: o parser de numeros foi refeito (C1) e o dinheiro trafega em centavos (`long`) do schema a UI; o percentual de repasse e aplicado com `BigDecimal`/`HALF_EVEN` e a parte da clinica mais o liquido sempre fecham com o bruto (M7, migracao v5).
+2. **Autorizacao e auditoria no service**: servicos, convenios e repasse passam por `CadastroService` com papel e auditoria (A1); usuarios podem ser desativados (A2); operacao e log sao atomicos (M2); o status do atendimento segue maquina de estados (A3).
+3. **Autenticacao endurecida**: bloqueio progressivo por login e por inatividade (M1), PBKDF2 com 600.000 iteracoes e senha minima de 12 (M5), tempo de resposta igual para login inexistente/inativo e checagem de permissao antes de revelar login duplicado (B5).
+4. **LGPD**: backup cifrado `.psgb` com restauracao verificada (A5 parcial, B4), exportacao do titular restrita ao psicologo, anonimizacao apos o prazo de guarda (M8). O banco principal continua sem cifra (protecao em repouso delegada ao BitLocker, ver `docs/POLITICA_DADOS.md`).
+5. **Ainda em aberto**: ver secao 4, "Limitacoes conhecidas" (M4, M6, B3, parte de B6) e os subitens sem [x] de B9.
 
-Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
+Contagem original: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
+Situacao: 18 corrigidos, 3 parciais (A5, B6, B9), 3 abertos e documentados como limitacao (M4, M6, B3).
 
 ## 2. Achados por severidade
 
@@ -104,7 +107,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Cenario: senha vazada -> troca de senha -> o vazamento nao e remediado para dados ja copiados.
 - Correcao: documentar a limitacao; oferecer "rotacionar chave" (DEK nova para registros novos, DEKs antigas mantidas embrulhadas, versao da chave em cada linha de `evolucao`).
 
-**M7. Dinheiro em `double`**
+[x] **M7. Dinheiro em `double`**
+- Corrigido em: `resources/db/schema.sql` + `util/Database.java` (v5: `convenio.valor_sessao`, `servico.valor`, `atendimento.valor` REAL -> INTEGER com `CAST(ROUND(valor*100) AS INTEGER)`; tabela recriada a partir do `schema.sql`, FKs conferidas com `foreign_key_check`), `model/Servico.java`, `model/Convenio.java`, `model/Atendimento.java` (`valorCentavos`, `long`), `dao/ServicoDAO.java`, `dao/ConvenioDAO.java`, `dao/AtendimentoDAO.java`, `service/FinanceiroService.java` (somas em `long`; `parteClinica` com `BigDecimal` e `RoundingMode.HALF_EVEN`; liquido = bruto - clinica), `service/CadastroService.java`, `service/AgendaService.java`, `util/Validadores.java` (`centavos`), `ui/Ui.java` (`moeda(long)`: unica conversao para texto), `ui/CadastrosView.java`, `ui/AgendaView.java`, `ui/FinanceiroView.java`. O percentual de repasse continua `REAL`/`double` no banco (nao e dinheiro). Teste: 3 x R$ 33,33 = R$ 99,99.
 - `model/Atendimento.java:15`, `service/FinanceiroService.java:30-37,64`, `schema.sql` (`REAL`).
 - Descricao: somas acumuladas sem arredondar em `resumo` (so `repasse` usa `arred`), com risco de divergencia de centavos entre cards e tabela de repasse.
 - Correcao: `BigDecimal` ou inteiro em centavos, com `RoundingMode` definido.
@@ -138,7 +142,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Corrigido em: `service/BackupService.java` (`gerar`: nome com data-hora + sufixo aleatorio, `CREATE_NEW`, `PRAGMA integrity_check` antes de cifrar; `restaurar`: so psicologo, decifra para temporario, `integrity_check`, confere `user_version`, copia o banco atual para `psigestor.db.antes-restauracao-<data>`, substitui e pede reinicio; auditado como `RESTAURACAO_BACKUP` no banco anterior e no restaurado), `util/Database.java` (`arquivo()`, `VERSAO_ESQUEMA` publico), `service/Contexto.java`, `ui/PrivacidadeView.java` (botao "Restaurar backup...")
 - Original: nome com precisao de segundos; se o arquivo existir, `VACUUM INTO` falha com mensagem tecnica (`BackupService.java:32,40`). Nao ha verificacao de integridade do arquivo gerado nem rotina de restauracao.
 
-**B5. Enumeracao de usuarios**
+[x] **B5. Enumeracao de usuarios**
+- Corrigido em: `service/AutenticacaoService.java` (`entrar`: PBKDF2 com `SALT_FICTICIO` e `ITERACOES_ATUAL` quando o login nao existe ou esta inativo; `cadastrar`: sessao/papel checados antes de qualquer validacao, inclusive do login duplicado). Resta diferenca pequena para usuario ainda com 210.000 iteracoes (migra no proximo login).
 - `service/AutenticacaoService.java:59`: usuario inexistente/inativo nao calcula PBKDF2, resposta muito mais rapida que senha errada (enumeracao por tempo). `cadastrar` verifica login duplicado (linha 29) antes de checar a sessao (linha 32). Impacto baixo em app desktop.
 
 **B6. Senha em memoria**
@@ -154,9 +159,11 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Corrigido em: `service/PacienteService.java` (`registrarConsentimento`, `aniversariantes`), `service/AgendaService.java` (`registrarPagamento`, `FORMAS_PAGAMENTO`, `doDia`, `periodo`), `ui/AgendaView.java`
 - `service/PacienteService.java:78-82` (`tipo == null` -> NPE; paciente inexistente -> `DaoException` de FK), `service/AgendaService.java:72-76` (forma de pagamento livre/nula; pagar atendimento cancelado ou ja pago sobrescreve a forma; pagamento so e contabilizado para REALIZADO, `FinanceiroService.java:34-37`). `PacienteService.aniversariantes` (linha 74) e `AgendaService.doDia/periodo` (85-91) nao chamam `exigirSessao()`.
 
-**B9. Detalhes menores**
-- `dao/PacienteDAO.java:65-69`: `LIKE` sem escapar `%`/`_` digitados.
-- `dao/AtendimentoDAO.java:76`, `dao/PacienteDAO.java:59`, `dao/UsuarioDAO.java:89`, `util/Database.java:59`: `rs.getInt(1)` sem `rs.next()` so funciona porque o sqlite-jdbc pre-posiciona o cursor; nao e portavel.
+**B9. Detalhes menores** (PARCIAL)
+- [x] `dao/PacienteDAO.java:65-69`: `LIKE` sem escapar `%`/`_` digitados.
+  - Corrigido em: `dao/PacienteDAO.java` (`LIKE ? ESCAPE '\'`, `escaparLike`)
+- [x] `dao/AtendimentoDAO.java:76`, `dao/PacienteDAO.java:59`, `dao/UsuarioDAO.java:89`, `util/Database.java:59`: `rs.getInt(1)` sem `rs.next()` so funciona porque o sqlite-jdbc pre-posiciona o cursor; nao e portavel.
+  - Corrigido em: `dao/AtendimentoDAO.java` (`contarSobrepostos`), `dao/PacienteDAO.java` (`cpfEmUso`), `dao/UsuarioDAO.java` (`contar`), `util/Database.java` (`migrar`)
 - Conexao JDBC unica e nao sincronizada (`util/Database.java:30`): segura enquanto tudo roda na thread JavaFX; qualquer uso futuro de `Task`/thread de fundo (ex.: backup, PBKDF2 sem congelar a UI) causara corrida.
 - `dao/ConsentimentoDAO.java:47-53`: `vigente` carrega todo o historico a cada checagem; `ServicoDAO.buscar` lista tudo e filtra em memoria (irrelevante nesta escala).
 - [x] `convenio.prazo_pagamento_dias` sem `CHECK` (aceita negativo).
@@ -170,8 +177,9 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 | Algoritmo/modo | AES-256-GCM (`AES/GCM/NoPadding`), tag de 128 bits - adequado (`util/Criptografia.java:88`). |
 | IV | 12 bytes de `SecureRandom` novo a cada cifragem, gravado junto do texto (`:86-87`). Aceitavel. |
 | Chave | DEK aleatoria de 256 bits por psicologo (`:59-63`), embrulhada por KEK = PBKDF2(senha, salt proprio) (`AutenticacaoService.java:123-129`). **Nenhuma chave hardcoded** (nao ha constantes de chave/segredo no codigo). |
-| Senha | PBKDF2-HMAC-SHA256, salt de 16 bytes, comparacao em tempo constante (`:48-52`). Iteracoes abaixo do atual (M5). |
-| AAD | Nao usado (M4). |
+| Senha | PBKDF2-HMAC-SHA256, salt de 16 bytes, comparacao em tempo constante (`:48-52`). 600.000 iteracoes, contagem gravada por usuario e migrada no login; senha minima de 12 (M5). Login inexistente/inativo tambem paga o PBKDF2 (B5). |
+| Backup | Arquivo `.psgb` cifrado com AES-GCM e chave derivada de uma senha de backup (A5, B4). |
+| AAD | Nao usado (M4, ver secao 4). |
 | Recuperacao | Inexistente: senha perdida = prontuario irrecuperavel. E comunicado ao usuario (`TelaLogin.java:59-60`, `TrocaSenhaDialog.java:26`), mas e risco de disponibilidade; considerar chave de recuperacao guardada offline. |
 | Metadados | `paciente_id`, `profissional_id`, `atendimento_id`, `registrado_em`, `retifica_id` ficam em claro (revelam frequencia e cronologia). |
 
@@ -180,15 +188,16 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
   - Corrigido em: `model/Evolucao.java` (`toString` oculta o texto)
 - `Usuario.toString` (`Usuario.java:53-55`) mostra so nome/CRP; `Paciente.toString` so o nome. Hash/salt/chave nunca sao impressos.
 - `log_acesso` guarda apenas acao/entidade/id, sem conteudo (bom).
-- Mensagens: `Criptografia.java:102` e generica; `DaoException`/`BackupService` expoem mensagens do driver/caminhos (B1).
-- O texto do prontuario permanece num `ListView` (`ui/ProntuarioView.java:38-48`) ate trocar de tela ou sair; sem timeout (M1).
+- Mensagens: `Criptografia.java:102` e generica; erros inesperados mostram mensagem generica ao usuario e vao para `~/PsiGestor/logs` so com classe e pilha (B1 corrigido).
+- O texto do prontuario permanece num `ListView` (`ui/ProntuarioView.java:38-48`) ate trocar de tela ou sair; o bloqueio por inatividade encerra a sessao (M1 corrigido).
 
 ### 3.3 Controle de acesso
 - Prontuario: `exigirPsicologo` exige papel e chave (`ProntuarioService.java:59-64`) - correto. Registros de outro psicologo aparecem como `SIGILOSO` (linha 55) - bom.
 - Qualquer psicologo le/escreve prontuario de qualquer paciente da clinica (sem vinculo terapeuta-paciente); so o conteudo antigo de outro autor fica protegido.
 - `ProntuarioService.gravar` (`:36-45`) nao confere que `atendimentoId` e `retificaId` pertencem ao `pacienteId` informado (a FK so garante existencia): uma retificacao pode apontar para registro de outro paciente. Retificar um registro "SIGILOSO" de outro autor e permitido.
-- A secretaria acessa todos os dados cadastrais, a agenda e pode exportar o relatorio LGPD (`PacienteService.java:98-100` so exige sessao). Avaliar restringir a exportacao ao psicologo.
-- Servicos/convenios/repasse sem controle de papel (A1); usuarios nao podem ser desativados (A2).
+- A secretaria acessa todos os dados cadastrais e a agenda; a exportacao do relatorio LGPD agora e restrita ao psicologo (A5).
+- Servicos/convenios/repasse exigem papel de psicologo e sao auditados (A1 corrigido); usuarios podem ser desativados, nunca o ultimo psicologo ativo (A2 corrigido).
+- Cadastro de usuario confere sessao e papel antes de qualquer outra validacao (B5).
 
 ### 3.4 Consentimento
 - Historico append-only com "vale o mais recente" (`ConsentimentoDAO`) - boa pratica.
@@ -197,16 +206,26 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Menor de idade: exige `responsavelLegal` preenchido (`PacienteService.java:42-43`), mas nao registra consentimento do responsavel.
 
 ### 3.5 Direitos do titular
-- Acesso/portabilidade (art. 18, II e V): exportacao TXT existe e e auditada (`PacienteService.java:126`), mas sem formato estruturado, sem cifragem (A5) e sem verificacao de identidade do solicitante. O prontuario fica fora, por decisao documentada.
+- Acesso/portabilidade (art. 18, II e V): exportacao TXT existe e e auditada, so pelo psicologo, com nome nao previsivel e sem sobrescrever (A5). Continua sem formato estruturado, em texto legivel (vai para o titular) e sem verificacao de identidade do solicitante. O prontuario fica fora, por decisao documentada.
 - Correcao (art. 18, III): editar cadastro e possivel e auditado como `ALTERACAO_PACIENTE`, sem valor anterior/posterior.
-- Eliminacao/anonimizacao (art. 18, IV e VI) e termino do tratamento (art. 15-16): **nao implementados** (M8). A decisao de nao ter "excluir" e coerente com a guarda minima de 5 anos, mas falta o procedimento pos-prazo.
+- Eliminacao/anonimizacao (art. 18, IV e VI) e termino do tratamento (art. 15-16): anonimizacao implementada apos o prazo de guarda, restrita ao psicologo e auditada (M8). A eliminacao do prontuario segue como decisao pendente em `docs/POLITICA_DADOS.md`.
 
 ### 3.6 Auditoria
 - Boa cobertura: login/logout, cadastro/alteracao de paciente, leitura/escrita/retificacao de prontuario, consentimentos, exportacao, backup, troca de senha.
-- Lacunas: leitura/pesquisa de cadastros e agenda nao e auditada; alteracoes de servico/convenio/repasse nao sao (A1); falhas de login nao registram a conta tentada (M1); operacao e log nao sao atomicos (M2); eventos de id inexistente sao logados sem efeito (A4); o log e protegido por triggers que quem tem acesso ao arquivo pode remover (sem encadeamento de hash), logo prova pouco contra um administrador malicioso.
+- Fechadas: alteracoes de servico/convenio/repasse auditadas (A1); falhas de login registram a conta cadastrada, nunca o texto digitado (M1); operacao e log atomicos (M2); id inexistente nao gera evento (A4); restauracao de backup auditada (B4).
+- Lacunas restantes: leitura/pesquisa de cadastros e agenda nao e auditada; o log e protegido por triggers que quem tem acesso ao arquivo pode remover (sem encadeamento de hash), logo prova pouco contra um administrador malicioso.
 - `PrivacidadeView` mostra so os 300 ultimos eventos, sem filtro nem exportacao.
 
-## 4. Pontos positivos
+## 4. Limitacoes conhecidas
+
+Itens avaliados e mantidos em aberto de proposito; o risco de cada um:
+
+- **M4. Ciphertext sem AAD**: quem consegue escrever no `.db` (removendo antes as triggers) pode mover um registro cifrado de prontuario para outro paciente ou alterar seus metadados sem que a decifragem acuse adulteracao.
+- **M6. Troca de senha nao rotaciona a DEK**: uma copia antiga do `.db` ou um backup feito antes da troca continua abrindo todo o prontuario, inclusive os registros novos, com a senha antiga vazada.
+- **B3. Arquivos com permissoes padrao**: banco, backups, logs e exportacoes herdam a ACL da pasta, entao outra conta do Windows com acesso a pasta pode copia-los.
+- **B6 (restante). Senha em memoria**: a `String` digitada na UI e a senha usada em `cadastrar` nao sao zeradas, e a DEK fica na memoria ate o coletor de lixo, entao um dump de memoria do processo pode expo-las.
+
+## 5. Pontos positivos
 
 - Criptografia de envelope bem desenhada (DEK aleatoria por psicologo, KEK da senha, troca de senha sem recifrar registros), GCM com IV novo por operacao, comparacao em tempo constante, nenhum segredo hardcoded.
 - Prontuario append-only com triggers de UPDATE/DELETE e fluxo de retificacao; log de acesso tambem protegido por triggers.

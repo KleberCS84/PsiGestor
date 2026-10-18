@@ -12,7 +12,7 @@ public class Atendimento {
     private LocalDateTime fim;
     private StatusAtendimento status = StatusAtendimento.AGENDADO;
     private Modalidade modalidade = Modalidade.PRESENCIAL;
-    private double valor;
+    private long valorCentavos;   // dinheiro sempre em centavos (M7)
     private boolean pago;
     private String formaPagamento;
     private boolean reciboEmitido;
@@ -45,8 +45,8 @@ public class Atendimento {
     public void setStatus(StatusAtendimento status) { this.status = status; }
     public Modalidade getModalidade() { return modalidade; }
     public void setModalidade(Modalidade modalidade) { this.modalidade = modalidade; }
-    public double getValor() { return valor; }
-    public void setValor(double valor) { this.valor = valor; }
+    public long getValorCentavos() { return valorCentavos; }
+    public void setValorCentavos(long valorCentavos) { this.valorCentavos = valorCentavos; }
     public boolean isPago() { return pago; }
     public void setPago(boolean pago) { this.pago = pago; }
     public String getFormaPagamento() { return formaPagamento; }
