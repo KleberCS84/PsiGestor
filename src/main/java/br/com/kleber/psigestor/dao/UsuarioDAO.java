@@ -17,8 +17,8 @@ public class UsuarioDAO {
     public Usuario inserir(Usuario u) {
         String sql = """
             INSERT INTO usuario (nome, login, senha_hash, senha_salt, chave_salt, papel, crp,
-                                 percentual_repasse_clinica, ativo, chave_cifrada, chave_iv)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""";
+                                 percentual_repasse_clinica, ativo, chave_cifrada, chave_iv, iteracoes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, u.getNome());
             ps.setString(2, u.getLogin());
@@ -31,6 +31,7 @@ public class UsuarioDAO {
             ps.setInt(9, u.isAtivo() ? 1 : 0);
             ps.setBytes(10, u.getChaveCifrada());
             ps.setBytes(11, u.getChaveIv());
+            ps.setInt(12, u.getIteracoes());
             ps.executeUpdate();
             u.setId(JdbcUtil.ultimoId(ps));
             return u;
@@ -71,7 +72,8 @@ public class UsuarioDAO {
     /** Grava senha e embrulho da chave juntos: um unico UPDATE e atomico, nao fica "meio trocado". */
     public void atualizarCredenciais(Usuario u) {
         String sql = """
-            UPDATE usuario SET senha_hash = ?, senha_salt = ?, chave_salt = ?, chave_cifrada = ?, chave_iv = ?
+            UPDATE usuario SET senha_hash = ?, senha_salt = ?, chave_salt = ?, chave_cifrada = ?, chave_iv = ?,
+                               iteracoes = ?
              WHERE id = ?""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, u.getSenhaHash());
@@ -79,7 +81,8 @@ public class UsuarioDAO {
             ps.setString(3, u.getChaveSalt());
             ps.setBytes(4, u.getChaveCifrada());
             ps.setBytes(5, u.getChaveIv());
-            ps.setInt(6, u.getId());
+            ps.setInt(6, u.getIteracoes());
+            ps.setInt(7, u.getId());
             ps.executeUpdate();
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar credenciais", e); }
     }
@@ -123,6 +126,7 @@ public class UsuarioDAO {
         u.setChaveSalt(rs.getString("chave_salt"));
         u.setChaveCifrada(rs.getBytes("chave_cifrada"));
         u.setChaveIv(rs.getBytes("chave_iv"));
+        u.setIteracoes(rs.getInt("iteracoes"));
         u.setPapel(Papel.valueOf(rs.getString("papel")));
         u.setCrp(rs.getString("crp"));
         u.setPercentualRepasseClinica(rs.getDouble("percentual_repasse_clinica"));

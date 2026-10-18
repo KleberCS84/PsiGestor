@@ -9,6 +9,7 @@ public class Usuario {
     private String chaveSalt;
     private byte[] chaveCifrada;   // DEK embrulhada pela senha; null = formato antigo (antes da v1)
     private byte[] chaveIv;
+    private int iteracoes;         // PBKDF2 usado no hash da senha e na KEK
     private Papel papel;
     private String crp;
     private double percentualRepasseClinica;
@@ -41,6 +42,8 @@ public class Usuario {
     public void setChaveCifrada(byte[] chaveCifrada) { this.chaveCifrada = chaveCifrada; }
     public byte[] getChaveIv() { return chaveIv; }
     public void setChaveIv(byte[] chaveIv) { this.chaveIv = chaveIv; }
+    public int getIteracoes() { return iteracoes; }
+    public void setIteracoes(int iteracoes) { this.iteracoes = iteracoes; }
     public Papel getPapel() { return papel; }
     public void setPapel(Papel papel) { this.papel = papel; }
     public String getCrp() { return crp; }

@@ -60,9 +60,9 @@ class CriptografiaTest {
     @Test
     void senhaConfereSomenteComASenhaCorreta() {
         String salt = Criptografia.novoSalt();
-        String hash = Criptografia.hashSenha("senhaForte1".toCharArray(), salt);
-        assertTrue(Criptografia.senhaConfere("senhaForte1".toCharArray(), salt, hash));
-        assertFalse(Criptografia.senhaConfere("senhaForte2".toCharArray(), salt, hash));
+        String hash = Criptografia.hashSenha("senhaForte1".toCharArray(), salt, Criptografia.ITERACOES_ATUAL);
+        assertTrue(Criptografia.senhaConfere("senhaForte1".toCharArray(), salt, hash, Criptografia.ITERACOES_ATUAL));
+        assertFalse(Criptografia.senhaConfere("senhaForte2".toCharArray(), salt, hash, Criptografia.ITERACOES_ATUAL));
     }
 
     @Test
@@ -71,27 +71,27 @@ class CriptografiaTest {
         String s1 = Criptografia.novoSalt();
         String s2 = Criptografia.novoSalt();
         assertNotEquals(s1, s2);
-        assertNotEquals(Criptografia.hashSenha(senha, s1), Criptografia.hashSenha(senha, s2));
+        assertNotEquals(Criptografia.hashSenha(senha, s1, Criptografia.ITERACOES_ATUAL), Criptografia.hashSenha(senha, s2, Criptografia.ITERACOES_ATUAL));
     }
 
     @Test
     void hashEhDeterministicoParaMesmoSaltESenha() {
         String salt = Criptografia.novoSalt();
-        assertEquals(Criptografia.hashSenha("abc12345".toCharArray(), salt),
-                Criptografia.hashSenha("abc12345".toCharArray(), salt));
+        assertEquals(Criptografia.hashSenha("abc12345".toCharArray(), salt, Criptografia.ITERACOES_ATUAL),
+                Criptografia.hashSenha("abc12345".toCharArray(), salt, Criptografia.ITERACOES_ATUAL));
     }
 
     @Test
     void envelopeDeChaveRecuperaADekComSenhaCertaEFalhaComErrada() {
         String salt = Criptografia.novoSalt();
         SecretKey dek = Criptografia.novaChaveDados();
-        SecretKey kek = Criptografia.derivarChave("senhaForte1".toCharArray(), salt);
+        SecretKey kek = Criptografia.derivarChave("senhaForte1".toCharArray(), salt, Criptografia.ITERACOES_ATUAL);
         byte[][] emb = Criptografia.embrulharChave(dek, kek);
 
         SecretKey recuperada = Criptografia.desembrulharChave(emb[1], emb[0], kek);
         assertArrayEquals(dek.getEncoded(), recuperada.getEncoded());
 
-        SecretKey kekErrada = Criptografia.derivarChave("outraSenha1".toCharArray(), salt);
+        SecretKey kekErrada = Criptografia.derivarChave("outraSenha1".toCharArray(), salt, Criptografia.ITERACOES_ATUAL);
         assertThrows(RegraNegocioException.class,
                 () -> Criptografia.desembrulharChave(emb[1], emb[0], kekErrada));
     }

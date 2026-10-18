@@ -61,6 +61,38 @@ public class PacienteDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao verificar CPF", e); }
     }
 
+    /**
+     * Data do ultimo atendimento do paciente (qualquer status) ou, se nunca houve, do cadastro.
+     * atendimento.inicio ("yyyy-MM-ddTHH:mm") e criado_em ("yyyy-MM-dd HH:mm:ss") comecam pela data ISO.
+     */
+    public LocalDate ultimaReferencia(int id) {
+        String sql = """
+            SELECT COALESCE((SELECT MAX(inicio) FROM atendimento WHERE paciente_id = p.id), p.criado_em)
+              FROM paciente p WHERE p.id = ?""";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) throw new RegraNegocioException("Paciente nao encontrado.");
+                return LocalDate.parse(rs.getString(1).substring(0, 10));
+            }
+        } catch (SQLException e) { throw new DaoException("Erro ao consultar ultimo atendimento", e); }
+    }
+
+    /**
+     * Substitui os dados identificadores por valores neutros. Id, atendimentos, financeiro e
+     * prontuario continuam ligados ao mesmo id. CPF vira NULL (coluna UNIQUE).
+     */
+    public void anonimizar(int id) {
+        String sql = """
+            UPDATE paciente SET nome = 'Paciente anonimizado #' || id, cpf = NULL, data_nascimento = NULL,
+                   telefone = NULL, email = NULL, contato_emergencia = NULL
+             WHERE id = ?""";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente nao encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao anonimizar paciente", e); }
+    }
+
     /** Busca por parte do nome (LIKE), incluindo ou nao os arquivados. */
     public List<Paciente> pesquisar(String trechoNome, boolean incluirArquivados) {
         String sql = "SELECT * FROM paciente WHERE nome LIKE ? "

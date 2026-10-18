@@ -47,8 +47,8 @@ class TelasSemBancoTest {
     void telasComBancoFechadoAvisamEmVezDeQuebrar(@TempDir Path tmp) throws InterruptedException {
         assumeTrue(fxDisponivel, "toolkit JavaFX indisponivel (ambiente sem display)");
         Contexto ctx = new Contexto("jdbc:sqlite:" + tmp.resolve("teste.db"));
-        ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte1".toCharArray(), Papel.PSICOLOGO, "09/12345", 30);
-        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray());
+        ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte12".toCharArray(), Papel.PSICOLOGO, "09/12345", 30);
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
         ctx.close();   // sessao continua em memoria; toda leitura agora lanca DaoException
 
         Map<String, Supplier<Node>> telas = new LinkedHashMap<>();

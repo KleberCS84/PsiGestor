@@ -23,7 +23,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
+import javax.crypto.SecretKey;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -41,9 +43,9 @@ class PsiGestorTest {
         // "hoje" fixo: as datas de 2026 usadas nos testes nunca saem da janela de agendamento
         ZoneId zona = ZoneId.systemDefault();
         ctx.setRelogio(Clock.fixed(LocalDate.of(2026, 10, 12).atStartOfDay(zona).toInstant(), zona));
-        ana = ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte1".toCharArray(),
+        ana = ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte12".toCharArray(),
                 Papel.PSICOLOGO, "09/12345", 30);
-        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray());
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
         sessao = ctx.servicos.salvar(new Servico("Psicoterapia individual", null, 50, 200));
         joao = ctx.pacienteService.salvar(new Paciente("Joao Lima", LocalDate.of(1990, 5, 20), "62999990000"));
     }
@@ -62,17 +64,17 @@ class PsiGestorTest {
     @Test
     void senhaNaoEhGuardadaEmTextoPuro() {
         Usuario u = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
-        assertNotEquals("senhaForte1", u.getSenhaHash());
+        assertNotEquals("senhaForte12", u.getSenhaHash());
     }
 
     // ---------- troca de senha (criptografia de envelope) ----------
     @Test
     void trocaDeSenhaMantemProntuarioLegivel() {
         ctx.prontuario.registrar(joao.getId(), null, "Registro antes da troca");
-        ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "novaSenha22".toCharArray());
+        ctx.autenticacao.trocarSenha("senhaForte12".toCharArray(), "novaSenha222".toCharArray());
         ctx.sair();
-        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
-        ctx.autenticacao.entrar("ana", "novaSenha22".toCharArray());
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
+        ctx.autenticacao.entrar("ana", "novaSenha222".toCharArray());
         assertEquals("Registro antes da troca", ctx.prontuario.listar(joao.getId()).get(0).texto());
         assertTrue(ctx.logs.ultimos(10).stream().anyMatch(l -> l.acao().equals("TROCA_SENHA")));
     }
@@ -80,18 +82,18 @@ class PsiGestorTest {
     @Test
     void trocaDeSenhaExigeSenhaAtualCorreta() {
         assertThrows(RegraNegocioException.class, () ->
-                ctx.autenticacao.trocarSenha("chuteErrado".toCharArray(), "novaSenha22".toCharArray()));
+                ctx.autenticacao.trocarSenha("chuteErrado".toCharArray(), "novaSenha222".toCharArray()));
         assertThrows(RegraNegocioException.class, () ->        // nova senha curta demais
-                ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "curta".toCharArray()));
+                ctx.autenticacao.trocarSenha("senhaForte12".toCharArray(), "curta".toCharArray()));
         ctx.sair();
-        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
     }
 
     /** Simula o banco real criado antes desta versao: sem as colunas novas e prontuario com a chave antiga. */
     @Test
     void bancoAntigoEMigradoSemPerderProntuario() throws SQLException {
         Usuario u = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
-        var chaveAntiga = Criptografia.derivarChave("senhaForte1".toCharArray(), u.getChaveSalt());
+        var chaveAntiga = Criptografia.derivarChave("senhaForte12".toCharArray(), u.getChaveSalt(), u.getIteracoes());
         byte[][] ivECifrado = Criptografia.cifrar("Registro do MVP", chaveAntiga);
         ctx.evolucoes.inserir(joao.getId(), null, ana.getId(), ivECifrado[1], ivECifrado[0], null);
         ctx.close();
@@ -105,14 +107,103 @@ class PsiGestorTest {
 
         ctx = new Contexto(url);                                   // migracao roda aqui
         assertNull(ctx.usuarios.buscarPorLogin("ana").orElseThrow().getChaveCifrada());
-        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()); // e aqui a chave e embrulhada
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()); // e aqui a chave e embrulhada
         assertNotNull(ctx.usuarios.buscarPorLogin("ana").orElseThrow().getChaveCifrada());
         assertEquals("Registro do MVP", ctx.prontuario.listar(joao.getId()).get(0).texto());
 
-        ctx.autenticacao.trocarSenha("senhaForte1".toCharArray(), "novaSenha22".toCharArray());
+        ctx.autenticacao.trocarSenha("senhaForte12".toCharArray(), "novaSenha222".toCharArray());
         ctx.sair();
-        ctx.autenticacao.entrar("ana", "novaSenha22".toCharArray());
+        ctx.autenticacao.entrar("ana", "novaSenha222".toCharArray());
         assertEquals("Registro do MVP", ctx.prontuario.listar(joao.getId()).get(0).texto());
+    }
+
+    /** M5: usuario anterior a v4 (210.000 iteracoes) entra com a senha antiga e e migrado sem recifrar nada. */
+    @Test
+    void usuarioCom210milIteracoesEMigradoNoLogin() throws SQLException {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro com 210 mil");
+        // Ana volta ao formato antigo: mesma DEK, hash da senha e KEK com 210.000 iteracoes
+        Usuario u = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        SecretKey dek = ctx.getSessao().chaveProntuario();
+        char[] senha = "senhaForte12".toCharArray();
+        u.setIteracoes(Criptografia.ITERACOES_LEGADO);
+        u.setSenhaHash(Criptografia.hashSenha(senha, u.getSenhaSalt(), Criptografia.ITERACOES_LEGADO));
+        byte[][] embrulho = Criptografia.embrulharChave(dek,
+                Criptografia.derivarChave(senha, u.getChaveSalt(), Criptografia.ITERACOES_LEGADO));
+        u.setChaveIv(embrulho[0]);
+        u.setChaveCifrada(embrulho[1]);
+        ctx.usuarios.atualizarCredenciais(u);
+        byte[] cifradoAntes = conteudoCifrado();
+        ctx.close();
+
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (Connection con = DriverManager.getConnection(url); Statement st = con.createStatement()) {
+            st.execute("ALTER TABLE usuario DROP COLUMN iteracoes");
+            st.execute("PRAGMA user_version = 3");
+        }
+        ctx = new Contexto(url);                                   // migracao v4: existentes = 210000
+        Usuario antes = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        assertEquals(Criptografia.ITERACOES_LEGADO, antes.getIteracoes());
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        Usuario depois = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        assertEquals(Criptografia.ITERACOES_ATUAL, depois.getIteracoes());
+        assertNotEquals(antes.getSenhaHash(), depois.getSenhaHash());
+        assertFalse(Arrays.equals(antes.getChaveCifrada(), depois.getChaveCifrada()));   // reembrulhada
+        assertTrue(ctx.logs.ultimos(5).stream().anyMatch(l -> l.acao().equals("MIGRACAO_ITERACOES_SENHA")));
+        assertArrayEquals(cifradoAntes, conteudoCifrado());                               // nao recifrou
+        assertEquals("Registro com 210 mil", ctx.prontuario.listar(joao.getId()).get(0).texto());
+
+        ctx.sair();
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        assertEquals("Registro com 210 mil", ctx.prontuario.listar(joao.getId()).get(0).texto());
+    }
+
+    private byte[] conteudoCifrado() throws SQLException {
+        try (Statement st = ctx.getConexaoParaTeste().createStatement();
+             ResultSet rs = st.executeQuery("SELECT conteudo_cifrado FROM evolucao ORDER BY id")) {
+            rs.next();
+            return rs.getBytes(1);
+        }
+    }
+
+    // ---------- anonimizacao (M8) ----------
+    @Test
+    void anonimizacaoRecusadaAntesDe5Anos() {
+        ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), LocalDateTime.of(2026, 10, 13, 14, 0),
+                Modalidade.PRESENCIAL, false);
+        var e = assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.anonimizarPaciente(joao.getId()));
+        assertTrue(e.getMessage().contains("5 anos"));
+        Paciente p = ctx.pacienteService.buscar(joao.getId());
+        assertEquals("Joao Lima", p.getNome());
+        assertNotNull(p.getTelefone());
+        assertNotNull(p.getDataNascimento());
+        assertTrue(ctx.logs.ultimos(5).stream().noneMatch(l -> l.acao().equals("ANONIMIZACAO_PACIENTE")));
+    }
+
+    @Test
+    void anonimizacaoApos5AnosMantemProntuarioEAtendimentos() {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro preservado");
+        ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), LocalDateTime.of(2026, 10, 13, 14, 0),
+                Modalidade.PRESENCIAL, false);
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ZoneId zona = ZoneId.systemDefault();
+        ctx.setRelogio(Clock.fixed(LocalDate.of(2032, 1, 10).atStartOfDay(zona).toInstant(), zona));
+
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.anonimizarPaciente(joao.getId()));
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        ctx.pacienteService.anonimizarPaciente(joao.getId());
+        Paciente p = ctx.pacienteService.buscar(joao.getId());
+        assertEquals("Paciente anonimizado #" + joao.getId(), p.getNome());
+        assertNull(p.getCpf());
+        assertNull(p.getTelefone());
+        assertNull(p.getEmail());
+        assertNull(p.getDataNascimento());
+        assertNull(p.getContatoEmergencia());
+        assertEquals(1, ctx.atendimentos.listarPorPaciente(joao.getId()).size());
+        assertEquals("Registro preservado", ctx.prontuario.listar(joao.getId()).get(0).texto());
+        assertTrue(ctx.logs.ultimos(5).stream().anyMatch(l -> l.acao().equals("ANONIMIZACAO_PACIENTE")));
     }
 
     // ---------- prontuario ----------
@@ -148,8 +239,8 @@ class PsiGestorTest {
 
     @Test
     void secretariaNaoAcessaProntuario() {
-        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
-        ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray());
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
         assertThrows(RegraNegocioException.class, () -> ctx.prontuario.listar(joao.getId()));
         assertThrows(RegraNegocioException.class, () -> ctx.prontuario.registrar(joao.getId(), null, "x"));
     }
@@ -324,8 +415,8 @@ class PsiGestorTest {
     // ---------- A1: servicos, convenios e repasse via service ----------
     @Test
     void secretariaNaoAlteraServicoConvenioNemRepasse() {
-        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
-        ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray());
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
         assertThrows(RegraNegocioException.class, () ->
                 ctx.cadastros.salvarServico(new Servico("Avaliacao", null, 50, 10)));
         assertThrows(RegraNegocioException.class, () ->
@@ -364,19 +455,19 @@ class PsiGestorTest {
     // ---------- A2: desativar usuario ----------
     @Test
     void psicologoDesativaUsuarioSemApagar() {
-        Usuario bia = ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
+        Usuario bia = ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
         ctx.autenticacao.desativar(bia.getId());
         assertTrue(ctx.logs.ultimos(5).stream().anyMatch(l -> l.acao().equals("DESATIVACAO_USUARIO")));
         assertFalse(ctx.usuarios.buscar(bia.getId()).orElseThrow().isAtivo());   // registro continua no banco
         assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(bia.getId()));   // ja inativo
         ctx.sair();
-        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray()));
     }
 
     @Test
     void secretariaNaoDesativaNinguem() {
-        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
-        ctx.autenticacao.entrar("bia", "senhaBia123".toCharArray());
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
         assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.desativar(ana.getId()));
         assertTrue(ctx.usuarios.buscar(ana.getId()).orElseThrow().isAtivo());
     }
@@ -400,11 +491,11 @@ class PsiGestorTest {
         ctx.sair();
         for (int i = 0; i < 5; i++)
             assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
-        var e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        var e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
         assertTrue(e.getMessage().contains("Muitas tentativas"));
         assertTrue(ctx.logs.ultimos(3).stream().anyMatch(l -> l.acao().equals("LOGIN_BLOQUEADO")));
         r.avancar(Duration.ofSeconds(30));
-        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
     }
 
     @Test
@@ -416,9 +507,9 @@ class PsiGestorTest {
         r.avancar(Duration.ofSeconds(30));
         assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray())); // 6a: 60 s
         r.avancar(Duration.ofSeconds(30));
-        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
         r.avancar(Duration.ofSeconds(30));
-        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
     }
 
     @Test
@@ -426,11 +517,11 @@ class PsiGestorTest {
         ctx.sair();
         for (int i = 0; i < 4; i++)
             assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
-        ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray());
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
         ctx.sair();
         for (int i = 0; i < 4; i++)
             assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "errada123".toCharArray()));
-        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray()));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
     }
 
     @Test
@@ -449,10 +540,10 @@ class PsiGestorTest {
     @Test
     void senhaDigitadaNoCampoLoginNaoVaiParaOLog() {
         ctx.sair();
-        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("senhaForte1", "x".toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("senhaForte12", "x".toCharArray()));
         var l = ctx.logs.ultimos(1).get(0);
         assertEquals("login inexistente", l.detalhe());
-        assertFalse(l.detalhe().contains("senhaForte1"));
+        assertFalse(l.detalhe().contains("senhaForte12"));
     }
 
     @Test

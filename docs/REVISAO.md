@@ -90,7 +90,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Descricao: GCM autentica o conteudo, mas nao o vinculo com `paciente_id`, `profissional_id`, `registrado_em`, `retifica_id` (colunas em claro). Quem puder escrever no `.db` (removendo antes a trigger, o que o arquivo permite) pode mover um registro cifrado de um paciente para outro ou alterar metadados; a decifragem continua valida. Impacto real depende do modelo de ameaca; trate como **(suspeita)** de risco de integridade.
 - Correcao: passar `paciente_id|profissional_id|iv` como AAD (`Cipher.updateAAD`).
 
-**M5. PBKDF2-HMAC-SHA256 com 210.000 iteracoes abaixo da recomendacao atual; senha minima fraca**
+[x] **M5. PBKDF2-HMAC-SHA256 com 210.000 iteracoes abaixo da recomendacao atual; senha minima fraca**
+- Corrigido em: `util/Criptografia.java` (`ITERACOES_ATUAL` = 600.000, iteracoes por parametro), `schema.sql` e `util/Database.java` (v4: `usuario.iteracoes`, existentes = 210000), `dao/UsuarioDAO.java`, `model/Usuario.java`, `service/AutenticacaoService.java` (`SENHA_MINIMA` = 12 para senha nova/trocada; `atualizarIteracoes` no login, mesma transacao, DEK reembrulhada sem recifrar o prontuario). Checagem contra senhas comuns e Argon2id nao foram feitos.
 - `util/Criptografia.java:29` (o comentario atribui 210.000 ao SHA-256), `service/AutenticacaoService.java:14`.
 - Descricao: pelo que conheco do OWASP Password Storage Cheat Sheet, 210.000 e o valor para PBKDF2-SHA512 e ~600.000 para SHA-256 (confirme na versao vigente). Como a KEK que protege todo o prontuario deriva so da senha, e o arquivo `.db`/backup permite ataque offline ilimitado, a robustez da senha e a unica barreira.
 - Correcao: aumentar iteracoes (gravando a contagem por usuario para permitir migracao futura), senha minima 12 ou passphrase, checagem contra senhas comuns; considerar Argon2id se aceitarem dependencia.
@@ -106,7 +107,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Descricao: somas acumuladas sem arredondar em `resumo` (so `repasse` usa `arred`), com risco de divergencia de centavos entre cards e tabela de repasse.
 - Correcao: `BigDecimal` ou inteiro em centavos, com `RoundingMode` definido.
 
-**M8. Direito de eliminacao/anonimizacao nao implementado**
+[x] **M8. Direito de eliminacao/anonimizacao nao implementado**
+- Corrigido em: `service/PacienteService.java` (`anonimizarPaciente`), `dao/PacienteDAO.java` (`ultimaReferencia`, `anonimizar`), `ui/PacientesView.java` (confirmacao digitando o nome), `docs/POLITICA_DADOS.md` (regra; eliminacao do prontuario = decisao pendente)
 - `service/PacienteService.java:53-63` (so arquivar), `schema.sql` (FK `ON DELETE RESTRICT`, triggers de delete). Detalhes na secao 3.5.
 - Correcao: `anonimizarPaciente(id)` (substitui nome/CPF/contatos por valores neutros mantendo id e vinculos financeiros), restrito a psicologo, apos `criado_em + 5 anos`, com auditoria; politica documentada.
 

@@ -26,7 +26,13 @@ import java.util.Base64;
  */
 public final class Criptografia {
 
-    private static final int ITERACOES = 210_000;   // recomendacao OWASP para PBKDF2-SHA256
+    /**
+     * Iteracoes do PBKDF2-SHA256 para senhas novas ou trocadas (OWASP: ~600.000 para SHA-256).
+     * A contagem fica gravada em usuario.iteracoes: quem tem menos e migrado no proximo login.
+     */
+    public static final int ITERACOES_ATUAL = 600_000;
+    /** Contagem usada antes da v4 do esquema (210.000 e o valor do OWASP para SHA-512, nao SHA-256). */
+    public static final int ITERACOES_LEGADO = 210_000;
     private static final int TAM_CHAVE_BITS = 256;
     private static final int TAM_IV = 12;
     private static final int TAM_TAG_BITS = 128;
@@ -40,19 +46,19 @@ public final class Criptografia {
         return Base64.getEncoder().encodeToString(salt);
     }
 
-    public static String hashSenha(char[] senha, String saltB64) {
-        return Base64.getEncoder().encodeToString(pbkdf2(senha, saltB64));
+    public static String hashSenha(char[] senha, String saltB64, int iteracoes) {
+        return Base64.getEncoder().encodeToString(pbkdf2(senha, saltB64, iteracoes));
     }
 
     /** Comparacao em tempo constante para nao vazar informacao por tempo de resposta. */
-    public static boolean senhaConfere(char[] senha, String saltB64, String hashEsperadoB64) {
-        byte[] calculado = pbkdf2(senha, saltB64);
+    public static boolean senhaConfere(char[] senha, String saltB64, String hashEsperadoB64, int iteracoes) {
+        byte[] calculado = pbkdf2(senha, saltB64, iteracoes);
         byte[] esperado = Base64.getDecoder().decode(hashEsperadoB64);
         return MessageDigest.isEqual(calculado, esperado);
     }
 
-    public static SecretKey derivarChave(char[] senha, String saltB64) {
-        return new SecretKeySpec(pbkdf2(senha, saltB64), "AES");
+    public static SecretKey derivarChave(char[] senha, String saltB64, int iteracoes) {
+        return new SecretKeySpec(pbkdf2(senha, saltB64, iteracoes), "AES");
     }
 
     /** Chave de dados (DEK) nova e aleatoria - nao depende de senha nenhuma. */
@@ -103,8 +109,8 @@ public final class Criptografia {
         }
     }
 
-    private static byte[] pbkdf2(char[] senha, String saltB64) {
-        PBEKeySpec spec = new PBEKeySpec(senha, Base64.getDecoder().decode(saltB64), ITERACOES, TAM_CHAVE_BITS);
+    private static byte[] pbkdf2(char[] senha, String saltB64, int iteracoes) {
+        PBEKeySpec spec = new PBEKeySpec(senha, Base64.getDecoder().decode(saltB64), iteracoes, TAM_CHAVE_BITS);
         try {
             return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
         } catch (GeneralSecurityException e) {

@@ -57,14 +57,35 @@ public class PacientesView {
         consent.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::consentimentos));
         Button exportar = new Button("Exportar dados (LGPD)");
         exportar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::exportar));
+        Button anonimizar = new Button("Anonimizar (LGPD)");
+        anonimizar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::anonimizar));
 
         carregar();
         return Ui.tela(Ui.titulo("Pacientes"),
                 Ui.linha(busca, arquivados, Ui.espaco(), novo),
                 tabela,
-                Ui.linha(editar, arquivar, consent, exportar),
+                Ui.linha(editar, arquivar, consent, exportar, anonimizar),
                 Ui.aviso("Nao ha botao de excluir: o registro documental deve ser guardado por no minimo 5 anos "
                         + "(Res. CFP 01/2009). Use \"Arquivar\" para tirar o paciente das listas."));
+    }
+
+    /** Irreversivel: so prossegue se o nome do paciente for digitado exatamente. */
+    private void anonimizar(Paciente p) {
+        TextInputDialog d = new TextInputDialog();
+        d.setTitle("Anonimizar paciente");
+        d.setHeaderText("Esta acao NAO pode ser desfeita.");
+        d.setContentText("Nome, CPF, nascimento, telefone, e-mail e contato de emergencia serao substituidos.\n"
+                + "Atendimentos, financeiro e prontuario sao mantidos.\n\n"
+                + "Digite o nome do paciente para confirmar:");
+        String digitado = d.showAndWait().map(String::strip).orElse(null);
+        if (digitado == null) return;
+        if (!digitado.equals(p.getNome())) {
+            Ui.erro("O nome digitado nao confere. Nada foi alterado.");
+            return;
+        }
+        if (Ui.executar(() -> ctx.pacienteService.anonimizarPaciente(p.getId())))
+            Ui.info("Paciente anonimizado.");
+        carregar();
     }
 
     private void carregar() {

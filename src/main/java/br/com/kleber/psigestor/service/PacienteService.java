@@ -19,6 +19,9 @@ import java.util.List;
 
 public class PacienteService {
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    /** Guarda minima do registro documental (Res. CFP 01/2009) antes de anonimizar. */
+    static final int GUARDA_MINIMA_ANOS = 5;
     static final int NOME_MAX = 120;
     static final int TELEFONE_MAX = 20;
     static final int EMAIL_MAX = 120;
@@ -105,6 +108,25 @@ public class PacienteService {
         ctx.transacao(() -> {
             ctx.pacientes.salvar(p);
             ctx.auditar(arquivado ? "ARQUIVAMENTO_PACIENTE" : "REATIVACAO_PACIENTE", "paciente", pacienteId);
+        });
+    }
+
+    /**
+     * Anonimiza o cadastro do titular (LGPD art. 18, IV) depois da guarda minima de 5 anos
+     * (Res. CFP 01/2009), contada do ultimo atendimento ou, se nunca houve, do cadastro.
+     * Nao toca no prontuario, nos atendimentos nem no financeiro. Ver docs/POLITICA_DADOS.md.
+     */
+    public void anonimizarPaciente(int pacienteId) {
+        if (!ctx.exigirSessao().usuario().isPsicologo())
+            throw new RegraNegocioException("Somente psicologos podem anonimizar pacientes.");
+        buscar(pacienteId);
+        LocalDate permitidoApos = ctx.pacientes.ultimaReferencia(pacienteId).plusYears(GUARDA_MINIMA_ANOS);
+        if (!permitidoApos.isBefore(ctx.hoje()))
+            throw new RegraNegocioException("Anonimizacao so e permitida " + GUARDA_MINIMA_ANOS
+                    + " anos apos o ultimo atendimento (a partir de " + permitidoApos.plusDays(1).format(DATA) + ").");
+        ctx.transacao(() -> {
+            ctx.pacientes.anonimizar(pacienteId);
+            ctx.auditar("ANONIMIZACAO_PACIENTE", "paciente", pacienteId);
         });
     }
 

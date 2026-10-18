@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS usuario (
     percentual_repasse_clinica REAL NOT NULL DEFAULT 0 CHECK (percentual_repasse_clinica BETWEEN 0 AND 100),
     ativo           INTEGER NOT NULL DEFAULT 1,
     chave_cifrada   BLOB,                     -- chave do prontuario (DEK) cifrada pela KEK; so psicologo
-    chave_iv        BLOB
+    chave_iv        BLOB,
+    iteracoes       INTEGER NOT NULL DEFAULT 210000  -- PBKDF2 da senha e da KEK; menor que o atual = migra no login
 );
 
 CREATE TABLE IF NOT EXISTS convenio (

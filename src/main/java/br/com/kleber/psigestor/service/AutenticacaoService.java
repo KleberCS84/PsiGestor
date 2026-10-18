@@ -16,7 +16,8 @@ import java.util.Locale;
 import java.util.Map;
 
 public class AutenticacaoService {
-    public static final int SENHA_MINIMA = 8;
+    /** Vale so para senha nova ou trocada: quem ja existe continua entrando com a senha atual. */
+    public static final int SENHA_MINIMA = 12;
     /** A partir desta falha seguida o login fica bloqueado; o bloqueio dobra a cada nova falha. */
     static final int FALHAS_ATE_BLOQUEIO = 5;
     static final Duration BLOQUEIO_INICIAL = Duration.ofSeconds(30);
@@ -57,8 +58,9 @@ public class AutenticacaoService {
         }
 
         Usuario u = new Usuario(nome.trim(), login.trim(), papel, papel == Papel.PSICOLOGO ? crp.trim() : null);
+        u.setIteracoes(Criptografia.ITERACOES_ATUAL);
         u.setSenhaSalt(Criptografia.novoSalt());
-        u.setSenhaHash(Criptografia.hashSenha(senha, u.getSenhaSalt()));
+        u.setSenhaHash(Criptografia.hashSenha(senha, u.getSenhaSalt(), u.getIteracoes()));
         u.setChaveSalt(Criptografia.novoSalt());
         if (u.isPsicologo()) {
             // Chave do prontuario aleatoria, guardada embrulhada pela senha (criptografia de envelope)
@@ -90,16 +92,17 @@ public class AutenticacaoService {
                 long seg = Math.max(1, Duration.between(agora, t.bloqueadoAte).toSeconds());
                 throw new RegraNegocioException("Muitas tentativas. Tente novamente em " + seg + " s.");
             }
-            if (u == null || !Criptografia.senhaConfere(senha, u.getSenhaSalt(), u.getSenhaHash())) {
+            if (u == null || !Criptografia.senhaConfere(senha, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 registrarFalha(chaveTentativa, agora);
                 ctx.logs.registrar(uid, "LOGIN_FALHOU", "usuario", null, detalhe);
                 throw new RegraNegocioException("Login ou senha invalidos."); // mensagem generica de proposito
             }
             tentativas.remove(chaveTentativa);
             try {
-                // migracao da chave (se houver) + LOGIN: ou os dois ficam no banco, ou nenhum
+                // migracoes (chave antiga, iteracoes) + LOGIN: ou tudo fica no banco, ou nada
                 return ctx.transacao(() -> {
                     SecretKey chave = u.isPsicologo() ? abrirChaveProntuario(u, senha) : null;
+                    if (u.getIteracoes() < Criptografia.ITERACOES_ATUAL) atualizarIteracoes(u, senha, chave);
                     Sessao s = new Sessao(u, chave);
                     ctx.setSessao(s);
                     ctx.auditar("LOGIN", "usuario", u.getId());
@@ -163,14 +166,16 @@ public class AutenticacaoService {
                 throw new RegraNegocioException("A nova senha deve ser diferente da atual.");
             // Relemos do banco para nao confiar em dados antigos guardados na sessao
             Usuario u = ctx.usuarios.buscarPorLogin(s.usuario().getLogin()).orElseThrow();
-            if (senhaAtual == null || !Criptografia.senhaConfere(senhaAtual, u.getSenhaSalt(), u.getSenhaHash())) {
+            if (senhaAtual == null
+                    || !Criptografia.senhaConfere(senhaAtual, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 ctx.auditar("TROCA_SENHA_FALHOU", "usuario", u.getId());
                 throw new RegraNegocioException("A senha atual nao confere.");
             }
             SecretKey dek = u.isPsicologo() ? abrirChaveProntuario(u, senhaAtual) : null;
 
+            u.setIteracoes(Criptografia.ITERACOES_ATUAL);   // a partir daqui, hash e KEK novos
             u.setSenhaSalt(Criptografia.novoSalt());
-            u.setSenhaHash(Criptografia.hashSenha(novaSenha, u.getSenhaSalt()));
+            u.setSenhaHash(Criptografia.hashSenha(novaSenha, u.getSenhaSalt(), u.getIteracoes()));
             if (dek != null) embrulhar(u, dek, novaSenha);
             ctx.transacao(() -> {
                 ctx.usuarios.atualizarCredenciais(u);   // um UPDATE so: senha e embrulho mudam juntos
@@ -191,20 +196,34 @@ public class AutenticacaoService {
      */
     private SecretKey abrirChaveProntuario(Usuario u, char[] senha) {
         if (u.getChaveCifrada() != null) {
-            SecretKey kek = Criptografia.derivarChave(senha, u.getChaveSalt());
+            SecretKey kek = Criptografia.derivarChave(senha, u.getChaveSalt(), u.getIteracoes());
             return Criptografia.desembrulharChave(u.getChaveCifrada(), u.getChaveIv(), kek);
         }
-        SecretKey dekAntiga = Criptografia.derivarChave(senha, u.getChaveSalt());
+        SecretKey dekAntiga = Criptografia.derivarChave(senha, u.getChaveSalt(), u.getIteracoes());
         embrulhar(u, dekAntiga, senha);
         ctx.usuarios.atualizarCredenciais(u);
         ctx.logs.registrar(u.getId(), "MIGRACAO_CHAVE_PRONTUARIO", "usuario", u.getId());
         return dekAntiga;
     }
 
+    /**
+     * Usuario com menos iteracoes que o atual (senha ja conferida): rederiva o hash da senha e
+     * embrulha a MESMA DEK com uma KEK nova. Os registros do prontuario nao sao recifrados.
+     * Roda dentro da transacao do login.
+     */
+    private void atualizarIteracoes(Usuario u, char[] senha, SecretKey dek) {
+        u.setIteracoes(Criptografia.ITERACOES_ATUAL);
+        u.setSenhaSalt(Criptografia.novoSalt());
+        u.setSenhaHash(Criptografia.hashSenha(senha, u.getSenhaSalt(), u.getIteracoes()));
+        if (dek != null) embrulhar(u, dek, senha);
+        ctx.usuarios.atualizarCredenciais(u);
+        ctx.logs.registrar(u.getId(), "MIGRACAO_ITERACOES_SENHA", "usuario", u.getId());
+    }
+
     /** Gera um salt novo, deriva a KEK da senha e grava a DEK cifrada no objeto (ainda nao no banco). */
     private static void embrulhar(Usuario u, SecretKey dek, char[] senha) {
         u.setChaveSalt(Criptografia.novoSalt());
-        SecretKey kek = Criptografia.derivarChave(senha, u.getChaveSalt());
+        SecretKey kek = Criptografia.derivarChave(senha, u.getChaveSalt(), u.getIteracoes());
         byte[][] ivECifrada = Criptografia.embrulharChave(dek, kek);
         u.setChaveIv(ivECifrada[0]);
         u.setChaveCifrada(ivECifrada[1]);

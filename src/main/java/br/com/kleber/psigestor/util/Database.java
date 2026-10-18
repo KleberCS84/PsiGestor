@@ -26,8 +26,9 @@ public class Database implements AutoCloseable {
      *  v1: usuario.chave_cifrada + usuario.chave_iv (criptografia de envelope / troca de senha)
      *  v2: convenio.prazo_pagamento_dias >= 0 (triggers: SQLite nao acrescenta CHECK em tabela existente)
      *  v3: log_acesso.detalhe (login tentado nas falhas de login)
+     *  v4: usuario.iteracoes (contagem do PBKDF2 por usuario; existentes = 210000)
      */
-    static final int VERSAO_ESQUEMA = 3;
+    static final int VERSAO_ESQUEMA = 4;
 
     private final Connection conexao;
 
@@ -81,6 +82,10 @@ public class Database implements AutoCloseable {
             }
             if (versao < 3) {
                 adicionarColunaSeFaltar(st, "log_acesso", "detalhe", "TEXT");
+            }
+            if (versao < 4) {
+                // usuarios ja cadastrados foram derivados com 210.000; o login seguinte migra para o atual
+                adicionarColunaSeFaltar(st, "usuario", "iteracoes", "INTEGER NOT NULL DEFAULT 210000");
             }
             st.execute("PRAGMA user_version = " + VERSAO_ESQUEMA);
             conexao.commit();
