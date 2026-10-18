@@ -16,6 +16,8 @@ public class Atendimento {
     private boolean pago;
     private String formaPagamento;
     private boolean reciboEmitido;
+    /** % da clinica vigente quando a sessao foi realizada; null enquanto nao realizada (M-5). */
+    private Double percentualRepasseClinica;
 
     // Campos apenas para exibicao (preenchidos por JOIN no DAO)
     private String pacienteNome;
@@ -53,6 +55,8 @@ public class Atendimento {
     public void setFormaPagamento(String f) { this.formaPagamento = f; }
     public boolean isReciboEmitido() { return reciboEmitido; }
     public void setReciboEmitido(boolean r) { this.reciboEmitido = r; }
+    public Double getPercentualRepasseClinica() { return percentualRepasseClinica; }
+    public void setPercentualRepasseClinica(Double p) { this.percentualRepasseClinica = p; }
     public String getPacienteNome() { return pacienteNome; }
     public void setPacienteNome(String n) { this.pacienteNome = n; }
     public String getProfissionalNome() { return profissionalNome; }

@@ -45,12 +45,17 @@ public class CadastroService {
 
     public void atualizarRepasse(int usuarioId, double percentualClinica) {
         exigirPsicologo();
-        if (percentualClinica < 0 || percentualClinica > 100)
-            throw new RegraNegocioException("Use um valor entre 0 e 100.");
+        validarPercentual(percentualClinica);
         ctx.transacao(() -> {
             ctx.usuarios.atualizarRepasse(usuarioId, percentualClinica);
             ctx.auditar("ALTERACAO_REPASSE", "usuario", usuarioId);
         });
+    }
+
+    /** Mesma faixa do CHECK do banco, com mensagem clara (tambem usada no cadastro de usuario). */
+    static void validarPercentual(double percentualClinica) {
+        if (Double.isNaN(percentualClinica) || percentualClinica < 0 || percentualClinica > 100)
+            throw new RegraNegocioException("Use um valor entre 0 e 100.");
     }
 
     public List<Servico> listarServicos() {

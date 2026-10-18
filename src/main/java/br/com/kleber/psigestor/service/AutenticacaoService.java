@@ -57,6 +57,7 @@ public class AutenticacaoService {
             throw new RegraNegocioException("A senha deve ter pelo menos " + SENHA_MINIMA + " caracteres.");
         if (papel == Papel.PSICOLOGO && Validadores.vazio(crp))
             throw new RegraNegocioException("Informe o numero do CRP do psicologo.");
+        CadastroService.validarPercentual(percentualRepasseClinica);
         if (ctx.usuarios.buscarPorLogin(login.trim()).isPresent())
             throw new RegraNegocioException("Ja existe um usuario com esse login.");
 
@@ -157,6 +158,20 @@ public class AutenticacaoService {
         ctx.transacao(() -> {
             ctx.usuarios.desativar(usuarioId);
             ctx.auditar("DESATIVACAO_USUARIO", "usuario", usuarioId);
+        });
+    }
+
+    /** Desfaz uma desativacao (ex.: usuario errado, profissional que voltou). So psicologo, auditado. */
+    public void reativar(int usuarioId) {
+        Sessao s = ctx.exigirSessao();
+        if (!s.usuario().isPsicologo())
+            throw new RegraNegocioException("Somente psicologos podem reativar usuarios.");
+        Usuario alvo = ctx.usuarios.buscar(usuarioId)
+                .orElseThrow(() -> new RegraNegocioException("Usuario nao encontrado."));
+        if (alvo.isAtivo()) throw new RegraNegocioException("Usuario ja esta ativo.");
+        ctx.transacao(() -> {
+            ctx.usuarios.reativar(usuarioId);
+            ctx.auditar("REATIVACAO_USUARIO", "usuario", usuarioId);
         });
     }
 

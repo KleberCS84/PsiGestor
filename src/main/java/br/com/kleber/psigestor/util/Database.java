@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -29,8 +30,11 @@ public class Database implements AutoCloseable {
      *  v3: log_acesso.detalhe (login tentado nas falhas de login)
      *  v4: usuario.iteracoes (contagem do PBKDF2 por usuario; existentes = 210000)
      *  v5: dinheiro em centavos: convenio.valor_sessao, servico.valor, atendimento.valor REAL -> INTEGER
+     *  v6: atendimento.percentual_repasse_clinica (congelado no REALIZADO; existentes = percentual atual)
+     *      e paciente.anonimizado_em
+     * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 5;
+    public static final int VERSAO_ESQUEMA = 6;
     private static final String PREFIXO_URL = "jdbc:sqlite:";
 
     private final String url;
@@ -40,12 +44,18 @@ public class Database implements AutoCloseable {
         this.url = url;
         try {
             conexao = DriverManager.getConnection(url);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Nao foi possivel abrir o banco: " + e.getMessage(), e);
+        }
+        try {
             try (Statement st = conexao.createStatement()) {
                 st.execute("PRAGMA foreign_keys = ON");   // SQLite vem com FK desligada!
             }
             criarEsquema();
             migrar();
-        } catch (SQLException e) {
+        } catch (SQLException | RuntimeException e) {
+            // conexao aberta prenderia o arquivo (no Windows nem a copia/restauracao manual funcionaria)
+            try { conexao.close(); } catch (SQLException c) { e.addSuppressed(c); }
             throw new IllegalStateException("Nao foi possivel abrir o banco: " + e.getMessage(), e);
         }
     }
@@ -75,6 +85,7 @@ public class Database implements AutoCloseable {
             versao = rs.next() ? rs.getInt(1) : 0;
         }
         if (versao >= VERSAO_ESQUEMA) return;
+        copiarAntesDeMigrar(versao);
 
         // v5 recria tabelas referenciadas por FK; o pragma so tem efeito fora de transacao
         try (Statement st = conexao.createStatement()) { st.execute("PRAGMA foreign_keys = OFF"); }
@@ -107,6 +118,15 @@ public class Database implements AutoCloseable {
                 converterParaCentavos(st, "servico", "valor");
                 if (converterParaCentavos(st, "atendimento", "valor"))
                     st.execute("CREATE INDEX IF NOT EXISTS idx_atendimento_inicio ON atendimento(inicio)");
+            }
+            if (versao < 6) {
+                // sem historico de vigencia: o melhor palpite para o passado e o percentual de hoje
+                adicionarColunaSeFaltar(st, "atendimento", "percentual_repasse_clinica", "REAL");
+                st.execute("""
+                    UPDATE atendimento SET percentual_repasse_clinica =
+                           (SELECT u.percentual_repasse_clinica FROM usuario u WHERE u.id = atendimento.profissional_id)
+                     WHERE percentual_repasse_clinica IS NULL""");
+                adicionarColunaSeFaltar(st, "paciente", "anonimizado_em", "TEXT");
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));
@@ -156,6 +176,37 @@ public class Database implements AutoCloseable {
         st.execute("DROP TABLE " + tabela);
         st.execute("ALTER TABLE " + nova + " RENAME TO " + tabela);
         return true;
+    }
+
+    /**
+     * Migracoes mudam dados de forma irreversivel (ex.: v5 reais -> centavos): antes, uma copia
+     * integra do banco como estava. Banco novo (sem usuario) nao precisa; em memoria nao ha arquivo.
+     * Copia ja existente (tentativa anterior que falhou) e mantida: e o estado mais antigo.
+     */
+    private void copiarAntesDeMigrar(int versao) throws SQLException {
+        if (!emArquivo()) return;
+        if (versao == 0) {
+            try (Statement st = conexao.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT EXISTS (SELECT 1 FROM usuario)")) {
+                if (!rs.next() || rs.getInt(1) == 0) return;
+            }
+        }
+        Path copia = arquivoDaCopiaPreMigracao();
+        if (Files.exists(copia)) return;
+        try (Statement st = conexao.createStatement()) {
+            st.execute("VACUUM INTO '" + copia.toString().replace("'", "''") + "'");
+        }
+    }
+
+    /** "psigestor.db.pre-v6": copia do banco anterior a migracao para a versao atual. */
+    public Path arquivoDaCopiaPreMigracao() {
+        Path banco = arquivo();
+        return banco.resolveSibling(banco.getFileName() + ".pre-v" + VERSAO_ESQUEMA);
+    }
+
+    private boolean emArquivo() {
+        String resto = url.startsWith(PREFIXO_URL) ? url.substring(PREFIXO_URL.length()) : "";
+        return !resto.isBlank() && !resto.startsWith(":memory:");
     }
 
     /** Banco novo ja nasce com a coluna (schema.sql); banco antigo ganha a coluna aqui. */

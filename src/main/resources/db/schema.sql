@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS paciente (
     convenio_id         INTEGER REFERENCES convenio(id) ON DELETE SET NULL,
     numero_carteirinha  TEXT,
     arquivado           INTEGER NOT NULL DEFAULT 0,   -- nunca apagamos: arquivamos
-    criado_em           TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    criado_em           TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    anonimizado_em      TEXT                  -- preenchido = anonimizado (LGPD): nao volta a ser editado
 );
 
 CREATE TABLE IF NOT EXISTS consentimento (
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS atendimento (
     pago             INTEGER NOT NULL DEFAULT 0,
     forma_pagamento  TEXT,
     recibo_emitido   INTEGER NOT NULL DEFAULT 0,  -- marcado apos emitir no Receita Saude
+    percentual_repasse_clinica REAL,          -- congelado ao virar REALIZADO/FALTOU (repasse nao muda no passado)
     CHECK (fim > inicio)
 );
 

@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.model.Papel;
+import br.com.kleber.psigestor.service.AutenticacaoService;
 import br.com.kleber.psigestor.service.Contexto;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
@@ -67,7 +68,7 @@ public class TelaLogin {
         g.addRow(0, new Label("Nome completo"), nome);
         g.addRow(1, new Label("CRP"), crp);
         g.addRow(2, new Label("Login"), login);
-        g.addRow(3, new Label("Senha (min. 8)"), senha);
+        g.addRow(3, new Label("Senha (min. " + AutenticacaoService.SENHA_MINIMA + ")"), senha);
         g.addRow(4, new Label("Repita a senha"), senha2);
         Button criar = new Button("Criar conta do psicologo responsavel");
         criar.getStyleClass().add("primario");

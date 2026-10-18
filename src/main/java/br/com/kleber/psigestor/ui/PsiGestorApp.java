@@ -1,6 +1,8 @@
 package br.com.kleber.psigestor.ui;
 
+import br.com.kleber.psigestor.service.BackupService;
 import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.LogTecnico;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -35,13 +37,33 @@ public class PsiGestorApp extends Application {
             // runLater: Alert.showAndWait e proibido durante animacao/layout
             if (Platform.isFxApplicationThread()) Platform.runLater(() -> Ui.erro(Ui.ERRO_GENERICO));
         });
-        ctx =new Contexto("jdbc:sqlite:" + pasta.resolve("psigestor.db"));
+        // backup/restauracao interrompidos (queda de energia) deixam copias do banco em claro
+        BackupService.limparTemporarios(pasta);
+        try {
+            ctx = new Contexto("jdbc:sqlite:" + pasta.resolve("psigestor.db"));
+        } catch (RuntimeException e) {
+            // ex.: migracao de esquema que falhou; sem isto a janela simplesmente nao abriria
+            LogTecnico.erro("Falha ao abrir o banco na partida", e);
+            Ui.erro(mensagemFalhaAoAbrir(pasta));
+            Platform.exit();
+            return;
+        }
         palco = stage;
         stage.setTitle("PsiGestor - consultorio de psicologia");
         stage.setMinWidth(1000);
         stage.setMinHeight(650);
         mostrarLogin();
         stage.show();
+    }
+
+    /** Sem detalhe tecnico (pode ter caminho/SQL): ele fica no log da pasta logs. */
+    static String mensagemFalhaAoAbrir(Path pasta) {
+        return "Nao foi possivel abrir ou atualizar o banco de dados do PsiGestor. Nenhum dado foi apagado.\n\n"
+                + "Se esta versao do programa precisou atualizar o banco, a copia de antes da atualizacao esta em\n"
+                + pasta.resolve("psigestor.db.pre-v" + Database.VERSAO_ESQUEMA) + ".\n"
+                + "Nao abra o banco com uma versao mais antiga do PsiGestor.\n\n"
+                + "Detalhe tecnico para o suporte: " + pasta.resolve("logs") + "\n"
+                + "O programa sera fechado.";
     }
 
     void mostrarLogin() {

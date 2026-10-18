@@ -40,6 +40,8 @@ public class FinanceiroView {
         lancamentos.getColumns().add(Ui.col("Data", a -> a.getInicio().format(Ui.DATA_HORA), 130));
         lancamentos.getColumns().add(Ui.col("Paciente", Atendimento::getPacienteNome, 200));
         lancamentos.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 160));
+        lancamentos.getColumns().add(Ui.col("Status", a -> a.getStatus() == StatusAtendimento.FALTOU
+                ? "Falta cobrada" : "Realizada", 110));
         lancamentos.getColumns().add(Ui.col("Tipo", a -> a.getConvenioId() == null ? "Particular" : "Convenio", 90));
         lancamentos.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()), 100));
         lancamentos.getColumns().add(Ui.col("Pago", a -> a.isPago() ? a.getFormaPagamento() : "PENDENTE", 110));
@@ -51,7 +53,7 @@ public class FinanceiroView {
                 Ui.linha(new Label("De"), de, new Label("ate"), ate, atualizar),
                 cards,
                 Ui.titulo("Repasse por profissional"), repasse,
-                Ui.titulo("Sessoes realizadas no periodo"), lancamentos,
+                Ui.titulo("Lancamentos do periodo"), lancamentos,
                 Ui.aviso("Recibos de pessoa fisica: emita pelo app/portal Receita Saude (Receita Federal) e marque "
                         + "\"Recibo emitido\" na Agenda. Este sistema nao emite documento fiscal. "
                         + "Os valores aqui sao gerenciais - confira com seu contador."));
@@ -66,10 +68,12 @@ public class FinanceiroView {
                     Ui.card("A receber", Ui.moeda(r.aReceber()), "cor-laranja"),
                     Ui.card("Sessoes realizadas", String.valueOf(r.realizados()), "cor-roxo"),
                     Ui.card("Faltas (" + String.format("%.0f%%", r.taxaFaltas() * 100) + ")", String.valueOf(r.faltas()), "cor-rosa"),
+                    Ui.card("Faltas cobradas (" + r.faltasCobradas() + ")", Ui.moeda(r.faltasCobradasCentavos()), "cor-rosa"),
                     Ui.card("Recibos a emitir", String.valueOf(r.recibosPendentes()), "cor-cinza"));
             repasse.getItems().setAll(ctx.financeiro.repasse(de.getValue(), ate.getValue()));
             lancamentos.getItems().setAll(ctx.agenda.periodo(de.getValue(), ate.getValue(), null).stream()
-                    .filter(a -> a.getStatus() == StatusAtendimento.REALIZADO).toList());
+                    .filter(a -> a.getStatus() == StatusAtendimento.REALIZADO
+                            || (a.getStatus() == StatusAtendimento.FALTOU && a.isPago())).toList());
         });
     }
 }

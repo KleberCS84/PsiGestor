@@ -6,6 +6,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -88,26 +89,36 @@ public final class Criptografia {
         return new String(decifrarBytes(cifrado, iv, chave), StandardCharsets.UTF_8);
     }
 
-    /** Formato do arquivo de backup: "PSGB" + versao (1 byte) + salt (16) + iv (12) + AES-GCM(dados). */
+    /**
+     * Formato do arquivo de backup:
+     *  v1 (antigo, so leitura): "PSGB" + versao (1 byte) + salt (16) + iv (12) + AES-GCM(dados), 600.000 iteracoes fixas;
+     *  v2 (atual): "PSGB" + versao (1 byte) + iteracoes (int, 4 bytes) + salt (16) + iv (12) + AES-GCM(dados).
+     * Com as iteracoes no proprio arquivo, subir ITERACOES_ATUAL nao impede abrir backups antigos.
+     */
     private static final byte[] MAGICO_BACKUP = { 'P', 'S', 'G', 'B' };
-    private static final byte VERSAO_BACKUP = 1;
+    private static final byte VERSAO_BACKUP_V1 = 1;
+    private static final byte VERSAO_BACKUP = 2;
+    /** Contagem implicita da v1 (era ITERACOES_ATUAL quando o formato foi criado). */
+    static final int ITERACOES_BACKUP_V1 = 600_000;
+    /** Fora disso o cabecalho e lixo; o limite superior evita travar a tela num PBKDF2 sem fim. */
+    private static final int ITERACOES_BACKUP_MIN = 100_000;
+    private static final int ITERACOES_BACKUP_MAX = 10_000_000;
     private static final int TAM_SALT = 16;
-    private static final int TAM_CABECALHO = MAGICO_BACKUP.length + 1 + TAM_SALT + TAM_IV;
+    private static final int TAM_CABECALHO_V1 = MAGICO_BACKUP.length + 1 + TAM_SALT + TAM_IV;
+    private static final int TAM_CABECALHO = MAGICO_BACKUP.length + 1 + Integer.BYTES + TAM_SALT + TAM_IV;
 
     /**
      * Cifra um arquivo inteiro com uma senha (backup): chave PBKDF2 com salt proprio do arquivo.
-     * O cabecalho entra como AAD: alterar versao, salt ou IV tambem invalida a tag.
+     * O cabecalho entra como AAD: alterar versao, iteracoes, salt ou IV tambem invalida a tag.
      */
     public static byte[] cifrarComSenha(byte[] dados, char[] senha) {
-        byte[] cabecalho = new byte[TAM_CABECALHO];
-        System.arraycopy(MAGICO_BACKUP, 0, cabecalho, 0, MAGICO_BACKUP.length);
-        cabecalho[MAGICO_BACKUP.length] = VERSAO_BACKUP;
         byte[] salt = new byte[TAM_SALT];
         byte[] iv = new byte[TAM_IV];
         RANDOM.nextBytes(salt);
         RANDOM.nextBytes(iv);
-        System.arraycopy(salt, 0, cabecalho, MAGICO_BACKUP.length + 1, TAM_SALT);
-        System.arraycopy(iv, 0, cabecalho, MAGICO_BACKUP.length + 1 + TAM_SALT, TAM_IV);
+        byte[] cabecalho = ByteBuffer.allocate(TAM_CABECALHO)
+                .put(MAGICO_BACKUP).put(VERSAO_BACKUP).putInt(ITERACOES_ATUAL).put(salt).put(iv)
+                .array();
         byte[] chave = pbkdf2(senha, Base64.getEncoder().encodeToString(salt), ITERACOES_ATUAL);
         try {
             Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
@@ -125,20 +136,42 @@ public final class Criptografia {
         }
     }
 
-    /** Inverso de cifrarComSenha. Senha errada e arquivo adulterado dao o mesmo erro (o GCM nao distingue). */
+    /**
+     * Inverso de cifrarComSenha; abre v2 e a v1 antiga. Senha errada e arquivo adulterado dao o
+     * mesmo erro (o GCM nao distingue).
+     */
     public static byte[] decifrarComSenha(byte[] pacote, char[] senha) {
-        if (pacote.length < TAM_CABECALHO + TAM_TAG_BITS / 8
-                || !Arrays.equals(pacote, 0, MAGICO_BACKUP.length, MAGICO_BACKUP, 0, MAGICO_BACKUP.length)
-                || pacote[MAGICO_BACKUP.length] != VERSAO_BACKUP)
-            throw new RegraNegocioException("Arquivo nao e um backup do PsiGestor ou versao nao suportada.");
-        byte[] salt = Arrays.copyOfRange(pacote, MAGICO_BACKUP.length + 1, MAGICO_BACKUP.length + 1 + TAM_SALT);
-        byte[] iv = Arrays.copyOfRange(pacote, MAGICO_BACKUP.length + 1 + TAM_SALT, TAM_CABECALHO);
-        byte[] chave = pbkdf2(senha, Base64.getEncoder().encodeToString(salt), ITERACOES_ATUAL);
+        RegraNegocioException formatoInvalido =
+                new RegraNegocioException("Arquivo nao e um backup do PsiGestor ou versao nao suportada.");
+        if (pacote.length <= MAGICO_BACKUP.length
+                || !Arrays.equals(pacote, 0, MAGICO_BACKUP.length, MAGICO_BACKUP, 0, MAGICO_BACKUP.length))
+            throw formatoInvalido;
+        byte versao = pacote[MAGICO_BACKUP.length];
+        int tamCabecalho;
+        int iteracoes;
+        int inicioSalt;
+        if (versao == VERSAO_BACKUP_V1) {
+            tamCabecalho = TAM_CABECALHO_V1;
+            iteracoes = ITERACOES_BACKUP_V1;
+            inicioSalt = MAGICO_BACKUP.length + 1;
+        } else if (versao == VERSAO_BACKUP) {
+            tamCabecalho = TAM_CABECALHO;
+            if (pacote.length < tamCabecalho) throw formatoInvalido;
+            iteracoes = ByteBuffer.wrap(pacote, MAGICO_BACKUP.length + 1, Integer.BYTES).getInt();
+            if (iteracoes < ITERACOES_BACKUP_MIN || iteracoes > ITERACOES_BACKUP_MAX) throw formatoInvalido;
+            inicioSalt = MAGICO_BACKUP.length + 1 + Integer.BYTES;
+        } else {
+            throw formatoInvalido;
+        }
+        if (pacote.length < tamCabecalho + TAM_TAG_BITS / 8) throw formatoInvalido;
+        byte[] salt = Arrays.copyOfRange(pacote, inicioSalt, inicioSalt + TAM_SALT);
+        byte[] iv = Arrays.copyOfRange(pacote, inicioSalt + TAM_SALT, tamCabecalho);
+        byte[] chave = pbkdf2(senha, Base64.getEncoder().encodeToString(salt), iteracoes);
         try {
             Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
             c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(chave, "AES"), new GCMParameterSpec(TAM_TAG_BITS, iv));
-            c.updateAAD(pacote, 0, TAM_CABECALHO);
-            return c.doFinal(pacote, TAM_CABECALHO, pacote.length - TAM_CABECALHO);
+            c.updateAAD(pacote, 0, tamCabecalho);
+            return c.doFinal(pacote, tamCabecalho, pacote.length - tamCabecalho);
         } catch (GeneralSecurityException e) {
             throw new RegraNegocioException("Senha do backup incorreta ou arquivo corrompido.");
         } finally {

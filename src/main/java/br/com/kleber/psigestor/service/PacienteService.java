@@ -22,6 +22,7 @@ public class PacienteService {
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    static final String ANONIMIZADO = "Paciente anonimizado (LGPD): o cadastro nao pode ser alterado nem reativado.";
     /** Guarda minima do registro documental (Res. CFP 01/2009) antes de anonimizar. */
     static final int GUARDA_MINIMA_ANOS = 5;
     static final int NOME_MAX = 120;
@@ -39,6 +40,9 @@ public class PacienteService {
     public Paciente salvar(Paciente p) {
         ctx.exigirSessao();
         if (p == null) throw new RegraNegocioException("Informe os dados do paciente.");
+        // confere no banco: a tela edita uma copia, que pode nao trazer anonimizado_em
+        if (p.getId() != null && buscar(p.getId()).isAnonimizado())
+            throw new RegraNegocioException(ANONIMIZADO);
         if (Validadores.vazio(p.getNome())) throw new RegraNegocioException("Nome do paciente e obrigatorio.");
         p.setNome(limitar(p.getNome(), NOME_MAX, "Nome"));
         p.setTelefone(opcional(p.getTelefone(), TELEFONE_MAX, "Telefone"));
@@ -106,6 +110,7 @@ public class PacienteService {
     public void arquivar(int pacienteId, boolean arquivado) {
         ctx.exigirSessao();
         Paciente p = buscar(pacienteId);
+        if (p.isAnonimizado()) throw new RegraNegocioException(ANONIMIZADO);
         p.setArquivado(arquivado);
         ctx.transacao(() -> {
             ctx.pacientes.salvar(p);
@@ -121,7 +126,7 @@ public class PacienteService {
     public void anonimizarPaciente(int pacienteId) {
         if (!ctx.exigirSessao().usuario().isPsicologo())
             throw new RegraNegocioException("Somente psicologos podem anonimizar pacientes.");
-        buscar(pacienteId);
+        if (buscar(pacienteId).isAnonimizado()) throw new RegraNegocioException("Paciente ja foi anonimizado.");
         LocalDate permitidoApos = ctx.pacientes.ultimaReferencia(pacienteId).plusYears(GUARDA_MINIMA_ANOS);
         if (!permitidoApos.isBefore(ctx.hoje()))
             throw new RegraNegocioException("Anonimizacao so e permitida " + GUARDA_MINIMA_ANOS

@@ -56,6 +56,14 @@ public class UsuarioDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao desativar usuario", e); }
     }
 
+    /** Desfaz desativar: o cadastro (e a chave do prontuario, se psicologo) nunca foi apagado. */
+    public void reativar(int id) {
+        try (PreparedStatement ps = con.prepareStatement("UPDATE usuario SET ativo = 1 WHERE id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao reativar usuario", e); }
+    }
+
     public Optional<Usuario> buscar(int id) {
         try (PreparedStatement ps = con.prepareStatement("SELECT * FROM usuario WHERE id = ?")) {
             ps.setInt(1, id);
@@ -83,7 +91,8 @@ public class UsuarioDAO {
             ps.setBytes(5, u.getChaveIv());
             ps.setInt(6, u.getIteracoes());
             ps.setInt(7, u.getId());
-            ps.executeUpdate();
+            // id inexistente: sem isso o service auditaria uma troca de senha que nao aconteceu
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar credenciais", e); }
     }
 

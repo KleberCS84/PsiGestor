@@ -35,6 +35,8 @@ public class AgendaService {
             throw new RegraNegocioException("Data fora do periodo permitido (ate " + DIAS_RETROATIVOS
                     + " dias atras e " + ANOS_A_FRENTE + " ano a frente).");
         Paciente paciente = ctx.pacienteService.buscar(pacienteId);
+        if (paciente.isAnonimizado())
+            throw new RegraNegocioException("Paciente anonimizado (LGPD): nao pode receber novos agendamentos.");
         if (paciente.isArquivado()) throw new RegraNegocioException("Paciente arquivado. Reative o cadastro antes.");
 
         Usuario prof = ctx.usuarios.listarPsicologos().stream()
@@ -84,12 +86,23 @@ public class AgendaService {
         StatusAtendimento anterior = a.getStatus();
         if (!anterior.podeIrPara(status))
             throw new RegraNegocioException("Nao e possivel mudar de " + anterior + " para " + status + ".");
+        // o pagamento ja registrado e de uma sessao realizada: virar falta mudaria o que foi recebido
+        if (anterior == StatusAtendimento.REALIZADO && status == StatusAtendimento.FALTOU && a.isPago())
+            throw new RegraNegocioException("Atendimento realizado e pago nao pode ser marcado como falta.");
         // cancelado nao ocupa horario: o espaco pode ter sido reaproveitado enquanto estava cancelado
         if (!anterior.ocupaHorario() && status.ocupaHorario())
             verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), a.getPacienteId(), a.getPacienteNome(),
                     a.getInicio(), a.getFim(), a.getId());
         ctx.transacao(() -> {
-            ctx.atendimentos.atualizarStatus(atendimentoId, status);
+            if (status == StatusAtendimento.REALIZADO || status == StatusAtendimento.FALTOU) {
+                // repasse congelado agora: mudar o % depois nao reescreve periodos ja fechados (M-5)
+                double percentual = ctx.usuarios.buscar(a.getProfissionalId())
+                        .orElseThrow(() -> new RegraNegocioException("Profissional nao encontrado."))
+                        .getPercentualRepasseClinica();
+                ctx.atendimentos.atualizarStatus(atendimentoId, status, percentual);
+            } else {
+                ctx.atendimentos.atualizarStatus(atendimentoId, status);
+            }
             ctx.auditar("STATUS_" + anterior.name() + "->" + status.name(), "atendimento", atendimentoId);
         });
     }

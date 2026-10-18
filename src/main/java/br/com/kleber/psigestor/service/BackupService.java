@@ -209,6 +209,25 @@ public class BackupService {
         return HexFormat.of().formatHex(b);
     }
 
+    /**
+     * Na partida: apaga temporarios "backup-*" e "restauracao-*" deixados por um backup ou restauracao
+     * interrompidos (queda de energia, processo morto). Contem copia do banco em claro. Nunca lanca.
+     */
+    public static void limparTemporarios(Path pasta) {
+        if (!Files.isDirectory(pasta)) return;
+        try (Stream<Path> itens = Files.list(pasta)) {
+            itens.filter(Files::isDirectory)
+                 .filter(p -> {
+                     String nome = p.getFileName().toString();
+                     return nome.startsWith("backup-") || nome.startsWith("restauracao-");
+                 })
+                 .toList()
+                 .forEach(BackupService::apagar);
+        } catch (IOException e) {
+            LogTecnico.erro("Falha ao listar temporarios de backup", e);
+        }
+    }
+
     /** Apaga o diretorio temporario e tudo dentro (contem copia do banco em claro). */
     private static void apagar(Path dir) {
         if (dir == null) return;

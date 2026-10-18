@@ -56,6 +56,12 @@ public class AtendimentoDAO {
         executar("UPDATE atendimento SET status = ? WHERE id = ?", status.name(), id);
     }
 
+    /** Muda o status e congela o % de repasse da clinica vigente agora (sessao realizada/falta). */
+    public void atualizarStatus(int id, StatusAtendimento status, double percentualRepasseClinica) {
+        executar("UPDATE atendimento SET status = ?, percentual_repasse_clinica = ? WHERE id = ?",
+                status.name(), percentualRepasseClinica, id);
+    }
+
     public void registrarPagamento(int id, String formaPagamento) {
         executar("UPDATE atendimento SET pago = 1, forma_pagamento = ? WHERE id = ?", formaPagamento, id);
     }
@@ -131,6 +137,8 @@ public class AtendimentoDAO {
                 a.setPago(rs.getInt("pago") == 1);
                 a.setFormaPagamento(rs.getString("forma_pagamento"));
                 a.setReciboEmitido(rs.getInt("recibo_emitido") == 1);
+                double perc = rs.getDouble("percentual_repasse_clinica");
+                a.setPercentualRepasseClinica(rs.wasNull() ? null : perc);
                 a.setPacienteNome(rs.getString("paciente_nome"));
                 a.setProfissionalNome(rs.getString("profissional_nome"));
                 a.setServicoNome(rs.getString("servico_nome"));

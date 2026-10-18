@@ -2,6 +2,7 @@ package br.com.kleber.psigestor.service;
 
 import br.com.kleber.psigestor.dao.*;
 import br.com.kleber.psigestor.util.Database;
+import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Sessao;
 
@@ -101,8 +102,7 @@ public class Contexto implements AutoCloseable {
     /** Encerra a sessao se passou TEMPO_INATIVIDADE sem atividade; devolve true se encerrou. */
     public boolean sairSeInativo() {
         if (sessao == null || agora().isBefore(ultimaAtividade.plus(TEMPO_INATIVIDADE))) return false;
-        auditar("LOGOUT_INATIVIDADE", "usuario", sessao.usuario().getId());
-        sessao = null;
+        encerrarSessao("LOGOUT_INATIVIDADE");
         return true;
     }
 
@@ -140,8 +140,21 @@ public class Contexto implements AutoCloseable {
     }
 
     public void sair() {
-        if (sessao != null) auditar("LOGOUT", "usuario", sessao.usuario().getId());
+        if (sessao != null) encerrarSessao("LOGOUT");
+    }
+
+    /**
+     * Sigilo antes da trilha: a sessao (e a chave do prontuario) some primeiro; se o log falhar
+     * (disco cheio, banco travado), a falha vai so para o log tecnico e o logout acontece igual.
+     */
+    private void encerrarSessao(String acao) {
+        int usuarioId = sessao.usuario().getId();
         sessao = null;
+        try {
+            logs.registrar(usuarioId, acao, "usuario", usuarioId);
+        } catch (RuntimeException e) {
+            LogTecnico.erro("Contexto.encerrarSessao", e);
+        }
     }
 
     @Override public void close() { db.close(); }

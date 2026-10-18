@@ -808,6 +808,266 @@ class PsiGestorTest {
         assertNull(ctx.getSessao());
     }
 
+    // ---------- revisao final: M-6, M-5, M-4, M-3 ----------
+    private String urlTeste() { return "jdbc:sqlite:" + tmp.resolve("teste.db"); }
+
+    private int userVersion(Path banco) throws SQLException {
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + banco);
+             Statement st = c.createStatement(); ResultSet rs = st.executeQuery("PRAGMA user_version")) {
+            return rs.next() ? rs.getInt(1) : -1;
+        }
+    }
+
+    /** M-6 + M-5: banco v5 ganha copia pre-v6 antes de migrar; atendimentos antigos recebem o % atual. */
+    @Test
+    void migracaoV6CopiaOBancoAntesEPreencheOPercentual() throws SQLException {
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDate.of(2026, 10, 20).atTime(8, 0), Modalidade.PRESENCIAL, false);
+        ctx.close();
+        try (Connection con = DriverManager.getConnection(urlTeste()); Statement st = con.createStatement()) {
+            st.execute("UPDATE atendimento SET percentual_repasse_clinica = NULL");   // como era na v5
+            st.execute("PRAGMA user_version = 5");
+        }
+        Path copia = tmp.resolve("teste.db.pre-v6");
+        assertFalse(Files.exists(copia));
+
+        ctx = new Contexto(urlTeste());
+        assertTrue(Files.exists(copia));
+        assertEquals(5, userVersion(copia));                       // estado de antes da migracao
+        assertEquals(6, userVersion(tmp.resolve("teste.db")));
+        assertEquals(30.0, ctx.atendimentos.buscar(a.getId()).orElseThrow().getPercentualRepasseClinica());
+    }
+
+    /** M-6: banco novo (sem usuario) e banco ja atual nao geram copia. */
+    @Test
+    void bancoNovoOuAtualNaoGeraCopia() {
+        assertFalse(Files.exists(tmp.resolve("teste.db.pre-v6")));   // o do @BeforeEach nasceu v6
+        ctx.close();
+        ctx = new Contexto(urlTeste());                               // reabrir v6
+        assertFalse(Files.exists(tmp.resolve("teste.db.pre-v6")));
+    }
+
+    /** M-6: migracao que falha nao altera o banco e a copia fica para recuperacao. */
+    @Test
+    void migracaoQueFalhaMantemBancoECopia() throws SQLException {
+        ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDate.of(2026, 10, 20).atTime(8, 0), Modalidade.PRESENCIAL, false);
+        ctx.close();
+        try (Connection con = DriverManager.getConnection(urlTeste()); Statement st = con.createStatement()) {
+            st.execute("UPDATE atendimento SET percentual_repasse_clinica = NULL");
+            st.execute("CREATE TRIGGER teste_bloqueia BEFORE UPDATE OF percentual_repasse_clinica ON atendimento "
+                    + "BEGIN SELECT RAISE(ABORT, 'falha simulada'); END");
+            st.execute("PRAGMA user_version = 5");
+        }
+        assertThrows(IllegalStateException.class, () -> new Contexto(urlTeste()));
+        assertEquals(5, userVersion(tmp.resolve("teste.db")));      // rollback: nada mudou
+        assertTrue(Files.exists(tmp.resolve("teste.db.pre-v6")));
+    }
+
+    /** M-5: mudar o % depois nao reescreve o repasse de sessoes ja realizadas. */
+    @Test
+    void repasseUsaPercentualDoMomentoDoRealizado() {
+        LocalDate d1 = LocalDate.of(2026, 10, 20), d2 = LocalDate.of(2026, 10, 21);
+        Atendimento a1 = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), d1.atTime(8, 0), Modalidade.PRESENCIAL, false);
+        Atendimento a2 = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), d2.atTime(8, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(a1.getId(), StatusAtendimento.REALIZADO);    // 30%
+        ctx.cadastros.atualizarRepasse(ana.getId(), 50);
+        ctx.agenda.alterarStatus(a2.getId(), StatusAtendimento.REALIZADO);    // 50%
+
+        assertEquals(6000, ctx.financeiro.repasse(d1, d1).get(0).parteClinica());
+        assertEquals(10000, ctx.financeiro.repasse(d2, d2).get(0).parteClinica());
+        FinanceiroService.LinhaRepasse l = ctx.financeiro.repasse(d1, d2).get(0);
+        assertEquals(40000, l.bruto());
+        assertEquals(16000, l.parteClinica());
+        assertEquals(24000, l.liquidoProfissional());
+    }
+
+    /** M-4: anonimizar limpa tudo que identifica, arquiva e e definitivo. */
+    @Test
+    void anonimizacaoCompletaEDefinitiva() {
+        joao.setResponsavelLegal("Maria Lima");
+        joao.setNumeroCarteirinha("123456789");
+        ctx.pacienteService.salvar(joao);
+        ZoneId zona = ZoneId.systemDefault();
+        LocalDate hoje = LocalDate.of(2033, 1, 10);
+        ctx.setRelogio(Clock.fixed(hoje.atStartOfDay(zona).toInstant(), zona));
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());   // sessao nova no relogio novo
+
+        ctx.pacienteService.anonimizarPaciente(joao.getId());
+        Paciente p = ctx.pacienteService.buscar(joao.getId());
+        assertNull(p.getResponsavelLegal());
+        assertNull(p.getNumeroCarteirinha());
+        assertTrue(p.isArquivado());
+        assertTrue(p.isAnonimizado());
+
+        p.setNome("Joao Lima");
+        assertEquals(PacienteService.ANONIMIZADO,
+                assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(p)).getMessage());
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.arquivar(joao.getId(), false));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.anonimizarPaciente(joao.getId()));
+        RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.agenda.agendar(joao.getId(),
+                ana.getId(), sessao.getId(), hoje.plusDays(1).atTime(8, 0), Modalidade.PRESENCIAL, false));
+        assertTrue(e.getMessage().contains("anonimizado"), e.getMessage());
+        assertEquals("Paciente anonimizado #" + joao.getId(), ctx.pacienteService.buscar(joao.getId()).getNome());
+    }
+
+    /** M-4: registro de prontuario sem atendimento tambem conta para a guarda de 5 anos. */
+    @Test
+    void registroDeProntuarioAdiaAAnonimizacao() throws SQLException {
+        try (Statement st = ctx.getConexaoParaTeste().createStatement()) {
+            st.execute("INSERT INTO evolucao (paciente_id, profissional_id, registrado_em, conteudo_cifrado, iv) "
+                    + "VALUES (" + joao.getId() + ", " + ana.getId() + ", '2030-03-01 10:00:00', X'00', X'00')");
+        }
+        ZoneId zona = ZoneId.systemDefault();
+        ctx.setRelogio(Clock.fixed(LocalDate.of(2033, 1, 10).atStartOfDay(zona).toInstant(), zona));
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        // so o cadastro (2026) liberaria em 2031; o registro de 2030 adia para 2035
+        RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                () -> ctx.pacienteService.anonimizarPaciente(joao.getId()));
+        assertTrue(e.getMessage().contains("2035"), e.getMessage());
+    }
+
+    /** M-3: temporarios de backup/restauracao interrompidos sao apagados na partida; o resto fica. */
+    @Test
+    void partidaApagaTemporariosDeBackupInterrompido() throws Exception {
+        Path pasta = Files.createDirectory(tmp.resolve("PsiGestor"));
+        Path b = Files.createDirectory(pasta.resolve("backup-123"));
+        Files.writeString(b.resolve("copia.db"), "dados em claro");
+        Path r = Files.createDirectories(pasta.resolve("restauracao-456").resolve("sub"));
+        Files.writeString(r.resolve("restaurado.db"), "dados em claro");
+        Path arquivoComPrefixo = Files.writeString(pasta.resolve("backup-notas.txt"), "nao e diretorio");
+        Path outra = Files.createDirectory(pasta.resolve("logs"));
+        Path banco = Files.writeString(pasta.resolve("psigestor.db.antes-restauracao-20261018_100000"), "x");
+
+        BackupService.limparTemporarios(pasta);
+
+        assertFalse(Files.exists(b));
+        assertFalse(Files.exists(pasta.resolve("restauracao-456")));
+        assertTrue(Files.exists(arquivoComPrefixo));
+        assertTrue(Files.exists(outra));
+        assertTrue(Files.exists(banco));   // a copia antes-restauracao e decisao do usuario (dialogo avisa)
+        assertDoesNotThrow(() -> BackupService.limparTemporarios(tmp.resolve("nao-existe")));
+    }
+
+    // ---------- revisao final (logFalhando: helper da secao M2) ----------
+    /** M-1: logout nunca depende do log. */
+    @Test
+    void logFalhandoNaoImpedeSair() throws SQLException {
+        logFalhando(true);
+        assertDoesNotThrow(() -> ctx.sair());
+        assertNull(ctx.getSessao());
+    }
+
+    /** M-1: idem para o logout por inatividade, pelo temporizador e pelo caminho de exigirSessao. */
+    @Test
+    void logFalhandoNaoImpedeLogoutPorInatividade() throws SQLException {
+        RelogioAjustavel r = relogioAjustavel();
+        logFalhando(true);
+        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        assertTrue(ctx.sairSeInativo());
+        assertNull(ctx.getSessao());
+
+        logFalhando(false);                        // o login e auditado em transacao: precisa do log
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        logFalhando(true);
+        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                () -> ctx.pacienteService.pesquisar("", false));
+        assertTrue(e.getMessage().contains("inatividade"), e.getMessage());
+        assertNull(ctx.getSessao());
+    }
+
+    /** M-2: falta cobrada e receita (faturado/recebido, bruto do repasse) mas nao e sessao. */
+    @Test
+    void faltaCobradaEntraNoFinanceiro() {
+        LocalDate dia = LocalDate.of(2026, 10, 22);
+        Atendimento realizada = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(8, 0), Modalidade.PRESENCIAL, false);
+        Atendimento faltaPaga = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(9, 0), Modalidade.PRESENCIAL, false);
+        Atendimento faltaNaoPaga = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(10, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(realizada.getId(), StatusAtendimento.REALIZADO);
+        ctx.agenda.alterarStatus(faltaPaga.getId(), StatusAtendimento.FALTOU);
+        ctx.agenda.registrarPagamento(faltaPaga.getId(), "PIX");
+        ctx.agenda.alterarStatus(faltaNaoPaga.getId(), StatusAtendimento.FALTOU);
+
+        FinanceiroService.Resumo r = ctx.financeiro.resumo(dia, dia);
+        assertEquals(40000, r.faturado());            // realizada + falta cobrada
+        assertEquals(20000, r.recebido());            // so a falta foi paga
+        assertEquals(20000, r.aReceber());            // a realizada
+        assertEquals(r.faturado(), r.recebido() + r.aReceber());
+        assertEquals(2, r.faltas());
+        assertEquals(1, r.faltasCobradas());
+        assertEquals(20000, r.faltasCobradasCentavos());
+        assertEquals(1, r.realizados());
+
+        FinanceiroService.LinhaRepasse l = ctx.financeiro.repasse(dia, dia).get(0);
+        assertEquals(1, l.sessoes());                 // falta cobrada nao vira sessao
+        assertEquals(40000, l.bruto());
+        assertEquals(12000, l.parteClinica());        // 30%
+        assertEquals(28000, l.liquidoProfissional());
+    }
+
+    /** M-2: o pagamento de uma sessao realizada nao pode "sumir" virando falta. */
+    @Test
+    void realizadoPagoNaoViraFalta() {
+        LocalDate dia = LocalDate.of(2026, 10, 22);
+        Atendimento pago = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(8, 0), Modalidade.PRESENCIAL, false);
+        Atendimento naoPago = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), dia.atTime(9, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(pago.getId(), StatusAtendimento.REALIZADO);
+        ctx.agenda.registrarPagamento(pago.getId(), "PIX");
+        ctx.agenda.alterarStatus(naoPago.getId(), StatusAtendimento.REALIZADO);
+
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.alterarStatus(pago.getId(), StatusAtendimento.FALTOU));
+        assertEquals(StatusAtendimento.REALIZADO, ctx.atendimentos.buscar(pago.getId()).orElseThrow().getStatus());
+        assertDoesNotThrow(() -> ctx.agenda.alterarStatus(naoPago.getId(), StatusAtendimento.FALTOU));
+    }
+
+    /** B-1: desativar tem volta, so por psicologo e auditado. */
+    @Test
+    void psicologoReativaUsuarioDesativado() {
+        Usuario bia = ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.desativar(bia.getId());
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray()));
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        ctx.autenticacao.reativar(bia.getId());
+        assertTrue(ctx.logs.ultimos(3).stream().anyMatch(l -> l.acao().equals("REATIVACAO_USUARIO")));
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.reativar(bia.getId()));   // ja ativo
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.reativar(999));
+
+        ctx.sair();
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.reativar(ana.getId()));   // secretaria nao
+    }
+
+    /** B-2: percentual fora da faixa da mensagem clara no cadastro, em vez do erro do CHECK. */
+    @Test
+    void cadastroDeUsuarioValidaPercentual() {
+        RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.cadastrar(
+                "Carlos", "carlos", "senhaCarlos1".toCharArray(), Papel.PSICOLOGO, "09/999", 150));
+        assertEquals("Use um valor entre 0 e 100.", e.getMessage());
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.cadastrar(
+                "Carlos", "carlos", "senhaCarlos1".toCharArray(), Papel.PSICOLOGO, "09/999", Double.NaN));
+    }
+
+    /** B-6: atualizar credenciais de id inexistente nao passa em silencio. */
+    @Test
+    void atualizarCredenciaisDeIdInexistenteFalha() {
+        Usuario fantasma = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        fantasma.setId(999);
+        assertThrows(RegraNegocioException.class, () -> ctx.usuarios.atualizarCredenciais(fantasma));
+    }
+
+    /** B-13: DatePicker limpo ou periodo invertido da mensagem clara, nao NPE. */
+    @Test
+    void financeiroRecusaPeriodoInvalido() {
+        LocalDate dia = LocalDate.of(2026, 10, 22);
+        assertEquals("Informe as datas inicial e final.",
+                assertThrows(RegraNegocioException.class, () -> ctx.financeiro.resumo(null, dia)).getMessage());
+        assertThrows(RegraNegocioException.class, () -> ctx.financeiro.repasse(dia, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.financeiro.resumo(dia, dia.minusDays(1)));
+    }
+
     @Test
     void bancoV2GanhaColunaDetalheNoLog() throws SQLException {
         ctx.close();

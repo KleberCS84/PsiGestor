@@ -7,14 +7,15 @@
 | Item | Regra |
 |---|---|
 | Quem pode | Somente usuario com papel **psicologo**. Secretaria e recusada. |
-| Quando | Somente se a data de referencia tiver **mais de 5 anos** (guarda minima do registro documental, Res. CFP 01/2009). Referencia = inicio do **ultimo atendimento** do paciente (qualquer status, inclusive futuro); se nunca houve atendimento, a data de **cadastro** (`paciente.criado_em`). |
-| O que muda | `nome` vira `Paciente anonimizado #<id>`; `cpf`, `data_nascimento`, `telefone`, `email` e `contato_emergencia` viram vazios (NULL). |
-| O que e mantido | O `id` do paciente, os atendimentos, os valores e pagamentos (financeiro), os consentimentos e o **prontuario**, que **nao e alterado**: continua cifrado, ligado ao mesmo id e legivel pelo psicologo autor. |
+| Quando | Somente se a data de referencia tiver **mais de 5 anos** (guarda minima do registro documental, Res. CFP 01/2009). Referencia = a data **mais recente** entre o **ultimo atendimento** (qualquer status, inclusive futuro), o **ultimo registro de prontuario** (`evolucao.registrado_em`, inclusive registros sem atendimento) e o **cadastro** (`paciente.criado_em`). |
+| O que muda | `nome` vira `Paciente anonimizado #<id>`; `cpf`, `data_nascimento`, `telefone`, `email`, `contato_emergencia`, `responsavel_legal` e `numero_carteirinha` viram vazios (NULL). O paciente e **arquivado** e `anonimizado_em` recebe a data/hora. |
+| Depois de anonimizado | O cadastro **nao pode** ser editado, desarquivado, anonimizado de novo nem receber agendamentos (o sistema recusa). |
+| O que e mantido | O `id` do paciente, o `convenio_id`, os atendimentos, os valores e pagamentos (financeiro), os consentimentos e o **prontuario**, que **nao e alterado**: continua cifrado, ligado ao mesmo id e legivel pelo psicologo autor. |
 | Auditoria | Evento `ANONIMIZACAO_PACIENTE` em `log_acesso`, gravado na mesma transacao da alteracao. |
 | Confirmacao | A tela exige digitar o nome atual do paciente; se nao conferir, nada e alterado. |
-| Reversao | **Irreversivel** no sistema. Os dados originais podem continuar em **backups** feitos antes da anonimizacao, que seguem a propria politica de retencao. |
+| Reversao | **Irreversivel** no sistema. Os dados originais podem continuar em **backups** feitos antes da anonimizacao, que seguem a propria politica de retencao; **restaurar** um desses backups traz os dados de volta (ver 3.2). |
 
-Campos nao incluidos nesta versao: `responsavel_legal`, `numero_carteirinha` e `convenio_id` continuam como estao.
+Campo mantido de proposito: `convenio_id` (referencia ao convenio, nao identifica a pessoa e sustenta o financeiro). O texto livre `consentimento.observacao` nao e alterado nesta versao.
 
 ## 2. Decisao pendente: eliminacao do prontuario apos o prazo
 
@@ -40,9 +41,9 @@ Tela **Privacidade & Seguranca**, botao **"Gerar backup agora"**.
 |---|---|
 | Quem pode | Somente **psicologo**. |
 | Senha | Senha **de backup**, pedida na hora, duas vezes, minimo de 12 caracteres. **Nao e armazenada** em lugar nenhum: perdida a senha, o backup nao pode ser restaurado. Guarde-a separada do arquivo. |
-| Como e feito | `VACUUM INTO` para um temporario na propria pasta do banco, `PRAGMA integrity_check` no temporario, cifragem e exclusao do temporario. |
+| Como e feito | `VACUUM INTO` para um temporario (`backup-*`) na propria pasta do banco, `PRAGMA integrity_check` no temporario, cifragem e exclusao do temporario. Temporarios `backup-*`/`restauracao-*` deixados por uma interrupcao (queda de energia) sao apagados na proxima vez que o PsiGestor abre. |
 | Cifra | AES-256-GCM; chave = PBKDF2-HMAC-SHA256 (600.000 iteracoes, salt aleatorio de 16 bytes por arquivo). |
-| Formato | `"PSGB"` + versao (1 byte) + salt (16) + IV (12) + dados cifrados com a tag GCM. O cabecalho e autenticado (AAD). |
+| Formato | v2: `"PSGB"` + versao (1 byte) + iteracoes (4 bytes) + salt (16) + IV (12) + dados cifrados com a tag GCM. O cabecalho inteiro e autenticado (AAD). Backups v1 (sem o campo de iteracoes, 600.000 fixas) continuam abrindo. |
 | Nome | `psigestor_backup_<aaaaMMdd_HHmmss>_<8 hex aleatorios>.psgb`; nunca sobrescreve um arquivo existente. |
 | Auditoria | Evento `BACKUP`. |
 
@@ -56,9 +57,17 @@ Botao **"Restaurar backup..."** (somente psicologo): escolher o `.psgb`, informa
 4. O banco atual e copiado para `psigestor.db.antes-restauracao-<aaaaMMdd_HHmmss>` na pasta do PsiGestor e entao substituido.
 5. O PsiGestor e fechado e precisa ser aberto de novo.
 
-A copia `antes-restauracao` contem os dados em claro (como o proprio banco): apague-a quando nao for mais necessaria.
+A copia `antes-restauracao` contem os dados em claro (como o proprio banco): apague-a quando nao for mais necessaria. A mensagem final da restauracao mostra onde ela ficou e tem o botao **"Abrir pasta"**.
 
-**Atencao:** apos restaurar, as senhas dos usuarios voltam a ser as vigentes na data do backup. Senhas trocadas depois disso deixam de valer; quem nao lembrar a senha antiga precisa que ela seja redefinida.
+**Atencao:** apos restaurar, tudo volta a ser como era na data do backup (o aviso de confirmacao lista isto):
+
+- as senhas dos usuarios voltam a ser as vigentes na data do backup. Senhas trocadas depois disso deixam de valer; quem nao lembrar a senha antiga precisa que ela seja redefinida;
+- usuarios **desativados** depois do backup voltam a ficar **ativos** e conseguem entrar: revise a tela Equipe e desative-os de novo;
+- pacientes **anonimizados** depois do backup voltam com os dados pessoais: refaca as anonimizacoes.
+
+### 3.2.1 Atualizacao do banco (migracao de versao)
+
+Quando uma versao nova do PsiGestor precisa atualizar a estrutura do banco, antes disso ela grava uma copia integra em `psigestor.db.pre-v<versao>` (em claro, como o banco). Se a atualizacao falhar, nada e alterado, o programa mostra onde esta a copia e fecha. Nao abra o banco atualizado com uma versao mais antiga do programa.
 
 ### 3.3 Exportacao de dados do titular (LGPD art. 18, II e V)
 

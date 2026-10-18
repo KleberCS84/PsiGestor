@@ -62,12 +62,15 @@ public class PacienteDAO {
     }
 
     /**
-     * Data do ultimo atendimento do paciente (qualquer status) ou, se nunca houve, do cadastro.
-     * atendimento.inicio ("yyyy-MM-ddTHH:mm") e criado_em ("yyyy-MM-dd HH:mm:ss") comecam pela data ISO.
+     * Data mais recente entre o ultimo atendimento (qualquer status), o ultimo registro de prontuario
+     * (inclusive sem atendimento) e o cadastro. Os formatos diferem ("yyyy-MM-ddTHH:mm" e
+     * "yyyy-MM-dd HH:mm:ss"), mas todos comecam pela data ISO: compara-se so os 10 primeiros caracteres.
      */
     public LocalDate ultimaReferencia(int id) {
         String sql = """
-            SELECT COALESCE((SELECT MAX(inicio) FROM atendimento WHERE paciente_id = p.id), p.criado_em)
+            SELECT MAX(substr(p.criado_em, 1, 10),
+                       COALESCE((SELECT substr(MAX(inicio), 1, 10) FROM atendimento WHERE paciente_id = p.id), ''),
+                       COALESCE((SELECT substr(MAX(registrado_em), 1, 10) FROM evolucao WHERE paciente_id = p.id), ''))
               FROM paciente p WHERE p.id = ?""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, id);
@@ -79,13 +82,15 @@ public class PacienteDAO {
     }
 
     /**
-     * Substitui os dados identificadores por valores neutros. Id, atendimentos, financeiro e
-     * prontuario continuam ligados ao mesmo id. CPF vira NULL (coluna UNIQUE).
+     * Substitui os dados identificadores por valores neutros, arquiva e marca anonimizado_em.
+     * Id, atendimentos, financeiro e prontuario continuam ligados ao mesmo id. CPF vira NULL (UNIQUE).
      */
     public void anonimizar(int id) {
         String sql = """
             UPDATE paciente SET nome = 'Paciente anonimizado #' || id, cpf = NULL, data_nascimento = NULL,
-                   telefone = NULL, email = NULL, contato_emergencia = NULL
+                   telefone = NULL, email = NULL, contato_emergencia = NULL,
+                   responsavel_legal = NULL, numero_carteirinha = NULL,
+                   arquivado = 1, anonimizado_em = datetime('now','localtime')
              WHERE id = ?""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, id);
@@ -126,6 +131,7 @@ public class PacienteDAO {
         p.setConvenioId(JdbcUtil.getIntOuNull(rs, "convenio_id"));
         p.setNumeroCarteirinha(rs.getString("numero_carteirinha"));
         p.setArquivado(rs.getInt("arquivado") == 1);
+        p.setAnonimizadoEm(rs.getString("anonimizado_em"));
         return p;
     }
 }

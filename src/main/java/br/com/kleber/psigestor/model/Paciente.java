@@ -15,6 +15,7 @@ public class Paciente {
     private Integer convenioId;
     private String numeroCarteirinha;
     private boolean arquivado;
+    private String anonimizadoEm;   // "yyyy-MM-dd HH:mm:ss"; null = nao anonimizado
 
     public Paciente() { }
 
@@ -62,6 +63,10 @@ public class Paciente {
     public void setNumeroCarteirinha(String n) { this.numeroCarteirinha = n; }
     public boolean isArquivado() { return arquivado; }
     public void setArquivado(boolean arquivado) { this.arquivado = arquivado; }
+    public String getAnonimizadoEm() { return anonimizadoEm; }
+    public void setAnonimizadoEm(String anonimizadoEm) { this.anonimizadoEm = anonimizadoEm; }
+    /** Anonimizado (LGPD) e definitivo: nao volta a ser editado, agendado nem desarquivado. */
+    public boolean isAnonimizado() { return anonimizadoEm != null; }
 
     @Override public String toString() { return nome; }
 }
