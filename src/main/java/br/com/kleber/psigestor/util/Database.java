@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -28,11 +29,14 @@ public class Database implements AutoCloseable {
      *  v3: log_acesso.detalhe (login tentado nas falhas de login)
      *  v4: usuario.iteracoes (contagem do PBKDF2 por usuario; existentes = 210000)
      */
-    static final int VERSAO_ESQUEMA = 4;
+    public static final int VERSAO_ESQUEMA = 4;
+    private static final String PREFIXO_URL = "jdbc:sqlite:";
 
+    private final String url;
     private final Connection conexao;
 
     public Database(String url) {
+        this.url = url;
         try {
             conexao = DriverManager.getConnection(url);
             try (Statement st = conexao.createStatement()) {
@@ -46,6 +50,14 @@ public class Database implements AutoCloseable {
     }
 
     public Connection getConexao() { return conexao; }
+
+    /** Caminho do arquivo .db (backup e restauracao trabalham ao lado dele). */
+    public Path arquivo() {
+        String resto = url.startsWith(PREFIXO_URL) ? url.substring(PREFIXO_URL.length()) : "";
+        if (resto.isBlank() || resto.startsWith(":memory:"))
+            throw new IllegalStateException("Banco em memoria nao tem arquivo.");
+        return Path.of(resto).toAbsolutePath();
+    }
 
     private void criarEsquema() throws SQLException {
         try (Statement st = conexao.createStatement()) {

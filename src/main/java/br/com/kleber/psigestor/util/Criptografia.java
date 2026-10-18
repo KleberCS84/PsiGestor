@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 
 /**
@@ -85,6 +86,64 @@ public final class Criptografia {
 
     public static String decifrar(byte[] cifrado, byte[] iv, SecretKey chave) {
         return new String(decifrarBytes(cifrado, iv, chave), StandardCharsets.UTF_8);
+    }
+
+    /** Formato do arquivo de backup: "PSGB" + versao (1 byte) + salt (16) + iv (12) + AES-GCM(dados). */
+    private static final byte[] MAGICO_BACKUP = { 'P', 'S', 'G', 'B' };
+    private static final byte VERSAO_BACKUP = 1;
+    private static final int TAM_SALT = 16;
+    private static final int TAM_CABECALHO = MAGICO_BACKUP.length + 1 + TAM_SALT + TAM_IV;
+
+    /**
+     * Cifra um arquivo inteiro com uma senha (backup): chave PBKDF2 com salt proprio do arquivo.
+     * O cabecalho entra como AAD: alterar versao, salt ou IV tambem invalida a tag.
+     */
+    public static byte[] cifrarComSenha(byte[] dados, char[] senha) {
+        byte[] cabecalho = new byte[TAM_CABECALHO];
+        System.arraycopy(MAGICO_BACKUP, 0, cabecalho, 0, MAGICO_BACKUP.length);
+        cabecalho[MAGICO_BACKUP.length] = VERSAO_BACKUP;
+        byte[] salt = new byte[TAM_SALT];
+        byte[] iv = new byte[TAM_IV];
+        RANDOM.nextBytes(salt);
+        RANDOM.nextBytes(iv);
+        System.arraycopy(salt, 0, cabecalho, MAGICO_BACKUP.length + 1, TAM_SALT);
+        System.arraycopy(iv, 0, cabecalho, MAGICO_BACKUP.length + 1 + TAM_SALT, TAM_IV);
+        byte[] chave = pbkdf2(senha, Base64.getEncoder().encodeToString(salt), ITERACOES_ATUAL);
+        try {
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(chave, "AES"), new GCMParameterSpec(TAM_TAG_BITS, iv));
+            c.updateAAD(cabecalho);
+            byte[] cifrado = c.doFinal(dados);
+            byte[] pacote = new byte[TAM_CABECALHO + cifrado.length];
+            System.arraycopy(cabecalho, 0, pacote, 0, TAM_CABECALHO);
+            System.arraycopy(cifrado, 0, pacote, TAM_CABECALHO, cifrado.length);
+            return pacote;
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Falha ao cifrar", e);
+        } finally {
+            Arrays.fill(chave, (byte) 0);
+        }
+    }
+
+    /** Inverso de cifrarComSenha. Senha errada e arquivo adulterado dao o mesmo erro (o GCM nao distingue). */
+    public static byte[] decifrarComSenha(byte[] pacote, char[] senha) {
+        if (pacote.length < TAM_CABECALHO + TAM_TAG_BITS / 8
+                || !Arrays.equals(pacote, 0, MAGICO_BACKUP.length, MAGICO_BACKUP, 0, MAGICO_BACKUP.length)
+                || pacote[MAGICO_BACKUP.length] != VERSAO_BACKUP)
+            throw new RegraNegocioException("Arquivo nao e um backup do PsiGestor ou versao nao suportada.");
+        byte[] salt = Arrays.copyOfRange(pacote, MAGICO_BACKUP.length + 1, MAGICO_BACKUP.length + 1 + TAM_SALT);
+        byte[] iv = Arrays.copyOfRange(pacote, MAGICO_BACKUP.length + 1 + TAM_SALT, TAM_CABECALHO);
+        byte[] chave = pbkdf2(senha, Base64.getEncoder().encodeToString(salt), ITERACOES_ATUAL);
+        try {
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(chave, "AES"), new GCMParameterSpec(TAM_TAG_BITS, iv));
+            c.updateAAD(pacote, 0, TAM_CABECALHO);
+            return c.doFinal(pacote, TAM_CABECALHO, pacote.length - TAM_CABECALHO);
+        } catch (GeneralSecurityException e) {
+            throw new RegraNegocioException("Senha do backup incorreta ou arquivo corrompido.");
+        } finally {
+            Arrays.fill(chave, (byte) 0);
+        }
     }
 
     private static byte[][] cifrarBytes(byte[] dados, SecretKey chave) {

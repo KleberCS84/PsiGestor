@@ -1,12 +1,16 @@
 package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.model.LogAcesso;
+import br.com.kleber.psigestor.service.AutenticacaoService;
+import br.com.kleber.psigestor.service.BackupService;
 import br.com.kleber.psigestor.service.Contexto;
+import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableView;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 
 import java.io.File;
 
@@ -32,7 +36,37 @@ public class PrivacidadeView {
             DirectoryChooser dc = new DirectoryChooser();
             dc.setTitle("Pasta do backup (prefira um pendrive/disco criptografado)");
             File pasta = dc.showDialog(log.getScene().getWindow());
-            if (pasta != null) Ui.executar(() -> Ui.info("Backup salvo em:\n" + ctx.backup.gerar(pasta.toPath())));
+            if (pasta == null) return;
+            SenhaBackupDialog.pedir("Senha do backup", "Minimo de " + AutenticacaoService.SENHA_MINIMA
+                    + " caracteres. A senha NAO e guardada: sem ela o backup nao pode ser restaurado. "
+                    + "Anote-a em local seguro, separado do backup.", true)
+                    .ifPresent(s -> Ui.executar(() -> Ui.info("Backup cifrado salvo em:\n"
+                            + ctx.backup.gerar(pasta.toPath(), s.senha(), s.confirmacao()))));
+        });
+
+        Button restaurar = new Button("Restaurar backup...");
+        restaurar.setDisable(!ctx.getSessao().usuario().isPsicologo());
+        restaurar.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("Escolha o arquivo de backup");
+            fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Backup do PsiGestor", "*" + BackupService.EXTENSAO));
+            File arq = fc.showOpenDialog(log.getScene().getWindow());
+            if (arq == null) return;
+            SenhaBackupDialog.pedir("Restaurar backup", "Informe a senha usada ao gerar este backup.", false)
+                    .ifPresent(s -> {
+                        if (!Ui.confirmar("Os dados atuais serao SUBSTITUIDOS pelos do backup.\n"
+                                + "Uma copia do banco atual sera mantida na pasta do PsiGestor.\n\n"
+                                + "Atencao: as senhas dos usuarios voltam a ser as vigentes na data do backup.\n\n"
+                                + "Continuar?")) {
+                            java.util.Arrays.fill(s.senha(), '\0');
+                            return;
+                        }
+                        boolean ok = Ui.executar(() -> Ui.info("Backup restaurado. Copia do banco anterior:\n"
+                                + ctx.backup.restaurar(arq.toPath(), s.senha())
+                                + "\n\nO PsiGestor sera fechado. Abra-o novamente para continuar."));
+                        // apos restaurar (ou falhar depois de fechar o banco) o contexto nao serve mais
+                        if (ok || ctx.getSessao() == null) Platform.exit();
+                    });
         });
 
         Label checklist = new Label("""
@@ -47,7 +81,7 @@ public class PrivacidadeView {
         checklist.getStyleClass().add("aviso");
         checklist.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
 
-        return Ui.tela(Ui.titulo("Privacidade & Seguranca"), checklist, Ui.linha(backup),
+        return Ui.tela(Ui.titulo("Privacidade & Seguranca"), checklist, Ui.linha(backup, restaurar),
                 Ui.titulo("Log de acesso (somente leitura)"), log);
     }
 }

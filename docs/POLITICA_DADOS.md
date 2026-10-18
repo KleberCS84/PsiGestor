@@ -29,3 +29,54 @@ Antes de implementar, e preciso definir:
 2. quem autoriza e como fica registrado (termo, auditoria);
 3. como tratar backups que ainda contem o registro;
 4. como compatibilizar com os triggers de imutabilidade (ex.: eliminar a DEK em vez de apagar linhas).
+
+## 3. Backup, restauracao e exportacao (REVISAO.md A5 parcial e B4)
+
+### 3.1 Backup cifrado (`.psgb`)
+
+Tela **Privacidade & Seguranca**, botao **"Gerar backup agora"**.
+
+| Item | Regra |
+|---|---|
+| Quem pode | Somente **psicologo**. |
+| Senha | Senha **de backup**, pedida na hora, duas vezes, minimo de 12 caracteres. **Nao e armazenada** em lugar nenhum: perdida a senha, o backup nao pode ser restaurado. Guarde-a separada do arquivo. |
+| Como e feito | `VACUUM INTO` para um temporario na propria pasta do banco, `PRAGMA integrity_check` no temporario, cifragem e exclusao do temporario. |
+| Cifra | AES-256-GCM; chave = PBKDF2-HMAC-SHA256 (600.000 iteracoes, salt aleatorio de 16 bytes por arquivo). |
+| Formato | `"PSGB"` + versao (1 byte) + salt (16) + IV (12) + dados cifrados com a tag GCM. O cabecalho e autenticado (AAD). |
+| Nome | `psigestor_backup_<aaaaMMdd_HHmmss>_<8 hex aleatorios>.psgb`; nunca sobrescreve um arquivo existente. |
+| Auditoria | Evento `BACKUP`. |
+
+### 3.2 Restauracao
+
+Botao **"Restaurar backup..."** (somente psicologo): escolher o `.psgb`, informar a senha, confirmar.
+
+1. O arquivo e decifrado para um temporario; senha errada ou arquivo corrompido/adulterado e recusado **sem alterar nada**.
+2. `PRAGMA integrity_check` e conferencia de que e um banco do PsiGestor com versao de esquema igual ou anterior a do programa (anterior e migrada ao abrir; posterior e recusada).
+3. Evento `RESTAURACAO_BACKUP` gravado no banco atual e no banco restaurado.
+4. O banco atual e copiado para `psigestor.db.antes-restauracao-<aaaaMMdd_HHmmss>` na pasta do PsiGestor e entao substituido.
+5. O PsiGestor e fechado e precisa ser aberto de novo.
+
+A copia `antes-restauracao` contem os dados em claro (como o proprio banco): apague-a quando nao for mais necessaria.
+
+**Atencao:** apos restaurar, as senhas dos usuarios voltam a ser as vigentes na data do backup. Senhas trocadas depois disso deixam de valer; quem nao lembrar a senha antiga precisa que ela seja redefinida.
+
+### 3.3 Exportacao de dados do titular (LGPD art. 18, II e V)
+
+| Item | Regra |
+|---|---|
+| Quem pode | Somente **psicologo**. |
+| Destino | Pasta escolhida pelo usuario. |
+| Nome | `dados_titular_<aaaaMMdd_HHmmss>_<8 hex aleatorios>.txt` (sem o id do paciente); nunca sobrescreve. |
+| Conteudo | TXT **nao cifrado** (e entregue ao titular). A tela avisa para **apagar o arquivo do computador (e da lixeira) depois de entregar**. |
+| Auditoria | Evento `EXPORTACAO_DADOS_TITULAR`. |
+
+### 3.4 Decisao: banco principal sem cifra no aplicativo
+
+O arquivo `~/PsiGestor/psigestor.db` **continua sem cifra** no PsiGestor: so o conteudo do prontuario e cifrado (por psicologo). CPF, contatos, agenda e financeiro ficam legiveis a quem copiar o arquivo. Por isso o item A5 da revisao esta marcado como **parcial**.
+
+Recomendacao obrigatoria para o computador do consultorio:
+
+- ativar o **BitLocker** (Windows Pro/Enterprise) ou a **Criptografia de dispositivo** (Windows Home compativel) no disco onde fica a pasta do usuario;
+- guardar a chave de recuperacao do BitLocker fora do computador;
+- usar conta do Windows com senha e bloqueio de tela automatico;
+- guardar os backups `.psgb` em midia separada (pendrive/disco externo, de preferencia tambem cifrado).

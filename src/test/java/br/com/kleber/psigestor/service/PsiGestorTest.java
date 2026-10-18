@@ -407,9 +407,132 @@ class PsiGestorTest {
     }
 
     @Test
-    void backupGeraArquivo() {
-        Path b = ctx.backup.gerar(tmp.resolve("backups"));
-        assertTrue(Files.exists(b));
+    void exportacaoSoPsicologoENuncaSobrescreve() {
+        Path a1 = ctx.pacienteService.exportarDadosDoTitular(joao.getId(), tmp.resolve("export"));
+        Path a2 = ctx.pacienteService.exportarDadosDoTitular(joao.getId(), tmp.resolve("export"));
+        assertNotEquals(a1, a2);
+        assertTrue(Files.exists(a1) && Files.exists(a2));
+        assertFalse(a1.getFileName().toString().contains("_" + joao.getId() + "."));
+
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.pacienteService.exportarDadosDoTitular(joao.getId(), tmp.resolve("export")));
+    }
+
+    // ---------- A5/B4: backup cifrado e restauracao ----------
+    static final String SENHA_BACKUP = "senhaDoBackup2026";
+
+    Path gerarBackup() {
+        return ctx.backup.gerar(tmp.resolve("backups"), SENHA_BACKUP.toCharArray(), SENHA_BACKUP.toCharArray());
+    }
+
+    @Test
+    void backupGeraArquivoCifrado() throws Exception {
+        Path b = gerarBackup();
+        assertTrue(b.getFileName().toString().endsWith(".psgb"));
+        byte[] bytes = Files.readAllBytes(b);
+        assertEquals("PSGB", new String(bytes, 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
+        assertFalse(new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1).contains("Joao Lima"));
+        assertNotEquals(b, gerarBackup());   // mesmo segundo: nome diferente, nada sobrescrito
+        try (var arquivos = Files.list(tmp)) {
+            assertTrue(arquivos.noneMatch(p -> p.getFileName().toString().startsWith("backup-")), "temporario ficou");
+        }
+    }
+
+    @Test
+    void senhaDeBackupCurtaOuDiferenteERecusada() {
+        Path pasta = tmp.resolve("backups");
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.backup.gerar(pasta, "curta123".toCharArray(), "curta123".toCharArray()));
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.backup.gerar(pasta, SENHA_BACKUP.toCharArray(), "outraSenha2026".toCharArray()));
+        assertFalse(Files.exists(pasta) && pasta.toFile().list().length > 0);
+    }
+
+    @Test
+    void secretariaNaoFazBackupNemRestaura() {
+        Path b = gerarBackup();
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
+        assertThrows(RegraNegocioException.class, this::gerarBackup);
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(b, SENHA_BACKUP.toCharArray()));
+    }
+
+    @Test
+    void backupERestauracaoComSenhaCertaPreservaPacientesEProntuario() throws Exception {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro antes do backup");
+        Path b = gerarBackup();
+        ctx.pacienteService.salvar(new Paciente("Maria Depois", LocalDate.of(1985, 1, 1), "62988880000"));
+
+        Path copia = ctx.backup.restaurar(b, SENHA_BACKUP.toCharArray());
+        assertTrue(Files.exists(copia));
+        assertTrue(copia.getFileName().toString().startsWith("teste.db.antes-restauracao-"));
+
+        ctx = new Contexto("jdbc:sqlite:" + tmp.resolve("teste.db"));   // "reiniciar o app"
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        List<String> nomes = ctx.pacienteService.pesquisar("", true).stream().map(Paciente::getNome).toList();
+        assertEquals(List.of("Joao Lima"), nomes);
+        assertEquals("Registro antes do backup", ctx.prontuario.listar(joao.getId()).get(0).texto());
+        assertTrue(ctx.logs.ultimos(10).stream().anyMatch(l -> l.acao().equals("RESTAURACAO_BACKUP")));
+        // a copia do banco anterior ainda tem a Maria
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + copia);
+             Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT count(*) FROM paciente WHERE nome = 'Maria Depois'")) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+        }
+    }
+
+    @Test
+    void restauracaoComSenhaErradaNaoAlteraBancoAtual() throws Exception {
+        Path b = gerarBackup();
+        ctx.pacienteService.salvar(new Paciente("Maria Depois", LocalDate.of(1985, 1, 1), "62988880000"));
+
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(b, "senhaErrada2026".toCharArray()));
+        assertEquals(2, ctx.pacienteService.pesquisar("", true).size());   // banco aberto e intacto
+        assertNotNull(ctx.getSessao());
+        assertNenhumaCopiaAntesRestauracao();
+    }
+
+    @Test
+    void backupCorrompidoERecusado() throws Exception {
+        Path b = gerarBackup();
+        byte[] bytes = Files.readAllBytes(b);
+
+        byte[] meio = bytes.clone();
+        meio[meio.length / 2] ^= 0x01;
+        Path corrompido = tmp.resolve("corrompido.psgb");
+        Files.write(corrompido, meio);
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(corrompido, SENHA_BACKUP.toCharArray()));
+
+        byte[] cabecalho = bytes.clone();
+        cabecalho[0] = 'X';
+        Path semMagico = tmp.resolve("sem_magico.psgb");
+        Files.write(semMagico, cabecalho);
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(semMagico, SENHA_BACKUP.toCharArray()));
+
+        Path truncado = tmp.resolve("truncado.psgb");
+        Files.write(truncado, java.util.Arrays.copyOf(bytes, 20));
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(truncado, SENHA_BACKUP.toCharArray()));
+
+        assertEquals(1, ctx.pacienteService.pesquisar("", true).size());
+        assertNenhumaCopiaAntesRestauracao();
+    }
+
+    @Test
+    void backupCifradoQueNaoEBancoERecusado() throws Exception {
+        Path falso = tmp.resolve("falso.psgb");
+        Files.write(falso, Criptografia.cifrarComSenha("nao sou um banco".getBytes(), SENHA_BACKUP.toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> ctx.backup.restaurar(falso, SENHA_BACKUP.toCharArray()));
+        assertEquals(1, ctx.pacienteService.pesquisar("", true).size());
+        assertNenhumaCopiaAntesRestauracao();
+    }
+
+    private void assertNenhumaCopiaAntesRestauracao() throws Exception {
+        try (var arquivos = Files.list(tmp)) {
+            assertTrue(arquivos.noneMatch(p -> p.getFileName().toString().contains("antes-restauracao")));
+        }
     }
 
     // ---------- A1: servicos, convenios e repasse via service ----------

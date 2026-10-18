@@ -12,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -20,6 +21,7 @@ import java.util.List;
 public class PacienteService {
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     /** Guarda minima do registro documental (Res. CFP 01/2009) antes de anonimizar. */
     static final int GUARDA_MINIMA_ANOS = 5;
     static final int NOME_MAX = 120;
@@ -169,7 +171,8 @@ public class PacienteService {
      * que decide a forma adequada (Res. CFP 01/2009 e 06/2019).
      */
     public Path exportarDadosDoTitular(int pacienteId, Path pasta) {
-        ctx.exigirSessao();
+        if (!ctx.exigirSessao().usuario().isPsicologo())
+            throw new RegraNegocioException("Exportacao de dados do titular restrita ao psicologo.");
         Paciente p = buscar(pacienteId);
         StringBuilder sb = new StringBuilder();
         sb.append("RELATORIO DE DADOS PESSOAIS - LGPD art. 18\n");
@@ -194,12 +197,14 @@ public class PacienteService {
         }
         try {
             Files.createDirectories(pasta);
-            Path arq = pasta.resolve("dados_paciente_" + pacienteId + ".txt");
+            // nome sem o id do paciente (nao previsivel) e CREATE_NEW: nunca sobrescreve outro relatorio
+            Path arq = pasta.resolve("dados_titular_" + LocalDateTime.now().format(CARIMBO) + "_"
+                    + BackupService.sufixoAleatorio() + ".txt");
             // log antes do arquivo, na mesma transacao: arquivo que nao foi gravado desfaz o log
             ctx.transacao(() -> {
                 ctx.auditar("EXPORTACAO_DADOS_TITULAR", "paciente", pacienteId);
                 try {
-                    Files.writeString(arq, sb.toString(), StandardCharsets.UTF_8);
+                    Files.writeString(arq, sb.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }

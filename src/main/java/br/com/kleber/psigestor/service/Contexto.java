@@ -60,7 +60,7 @@ public class Contexto implements AutoCloseable {
         agenda = new AgendaService(this);
         prontuario = new ProntuarioService(this);
         financeiro = new FinanceiroService(this);
-        backup = new BackupService(this, con);
+        backup = new BackupService(this, db);
         cadastros = new CadastroService(this);
     }
 

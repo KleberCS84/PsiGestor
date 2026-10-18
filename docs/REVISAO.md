@@ -56,7 +56,9 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Cenario: `registrarPagamento(999, "PIX")` retorna sucesso e grava no log `PAGAMENTO atendimento 999` sem nada ter mudado. A auditoria passa a conter eventos que nao ocorreram.
 - Correcao: verificar `executeUpdate() == 1` e lancar `RegraNegocioException("Atendimento nao encontrado.")`.
 
-**A5. Dados cadastrais em texto puro: banco, backup e exportacao**
+[x] **A5. Dados cadastrais em texto puro: banco, backup e exportacao** (PARCIAL)
+- Corrigido em: `util/Criptografia.java` (`cifrarComSenha`/`decifrarComSenha`, formato `PSGB`), `service/BackupService.java` (backup `.psgb` cifrado com senha de backup), `service/PacienteService.java` (exportacao so psicologo, nome nao previsivel, `CREATE_NEW`), `ui/PrivacidadeView.java`, `ui/SenhaBackupDialog.java` (novo), `ui/PacientesView.java` (aviso para apagar o arquivo apos entregar), `docs/POLITICA_DADOS.md` (secao 3)
+- Decisao (por isso parcial): o banco principal `psigestor.db` continua sem cifra e as colunas cadastrais de `paciente` continuam em claro; a protecao em repouso fica a cargo do BitLocker/Criptografia de dispositivo do Windows (recomendacao em `docs/POLITICA_DADOS.md`, secao 3.4). O relatorio do titular continua TXT legivel (vai para o titular). B3 (permissoes) nao foi tratado.
 - `service/BackupService.java:35` (`VACUUM INTO`, copia integral nao cifrada), `service/PacienteService.java:98-130` (TXT puro, nome previsivel `dados_paciente_<id>.txt`, sobrescreve silenciosamente), `resources/db/schema.sql:39-52`.
 - Descricao: so o conteudo de `evolucao` e cifrado. CPF, nascimento, telefone, e-mail, contato de emergencia, convenio/carteirinha e a agenda (quem consulta com quem e quando, dado de saude por inferencia) ficam legiveis a quem copiar `~/PsiGestor/psigestor.db`. O comentario do `BackupService` (linhas 14-16) reconhece isso; a unica mitigacao e um aviso na tela.
 - Cenario: notebook roubado sem BitLocker, pendrive de backup perdido ou relatorio LGPD esquecido em Downloads: vazamento de dados pessoais de pacientes de psicologia.
@@ -132,7 +134,9 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 **B3. Arquivos criados com permissoes padrao**
 - `ui/PsiGestorApp.java:21-23`, `service/PacienteService.java:123-125`, `service/BackupService.java:31-35`. No Windows herdam a ACL da pasta de destino; considerar restringir a ACL do diretorio `PsiGestor` e dos exports.
 
-**B4. Backup**: nome com precisao de segundos; se o arquivo existir, `VACUUM INTO` falha com mensagem tecnica (`BackupService.java:32,40`). Nao ha verificacao de integridade do arquivo gerado nem rotina de restauracao.
+[x] **B4. Backup**
+- Corrigido em: `service/BackupService.java` (`gerar`: nome com data-hora + sufixo aleatorio, `CREATE_NEW`, `PRAGMA integrity_check` antes de cifrar; `restaurar`: so psicologo, decifra para temporario, `integrity_check`, confere `user_version`, copia o banco atual para `psigestor.db.antes-restauracao-<data>`, substitui e pede reinicio; auditado como `RESTAURACAO_BACKUP` no banco anterior e no restaurado), `util/Database.java` (`arquivo()`, `VERSAO_ESQUEMA` publico), `service/Contexto.java`, `ui/PrivacidadeView.java` (botao "Restaurar backup...")
+- Original: nome com precisao de segundos; se o arquivo existir, `VACUUM INTO` falha com mensagem tecnica (`BackupService.java:32,40`). Nao ha verificacao de integridade do arquivo gerado nem rotina de restauracao.
 
 **B5. Enumeracao de usuarios**
 - `service/AutenticacaoService.java:59`: usuario inexistente/inativo nao calcula PBKDF2, resposta muito mais rapida que senha errada (enumeracao por tempo). `cadastrar` verifica login duplicado (linha 29) antes de checar a sessao (linha 32). Impacto baixo em app desktop.

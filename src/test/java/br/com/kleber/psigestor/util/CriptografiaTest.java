@@ -97,6 +97,25 @@ class CriptografiaTest {
     }
 
     @Test
+    void cifrarComSenhaFazIdaEVoltaEFalhaComSenhaErrada() {
+        byte[] dados = "conteudo do banco".getBytes(StandardCharsets.UTF_8);
+        byte[] pacote = Criptografia.cifrarComSenha(dados, "senhaDoBackup1".toCharArray());
+        assertEquals("PSGB", new String(pacote, 0, 4, StandardCharsets.US_ASCII));
+        assertEquals(1, pacote[4]);
+        assertArrayEquals(dados, Criptografia.decifrarComSenha(pacote, "senhaDoBackup1".toCharArray()));
+        assertThrows(RegraNegocioException.class,
+                () -> Criptografia.decifrarComSenha(pacote, "senhaDoBackup2".toCharArray()));
+    }
+
+    @Test
+    void cabecalhoDoBackupAdulteradoEDetectado() {
+        byte[] pacote = Criptografia.cifrarComSenha(new byte[] { 1, 2, 3 }, "senhaDoBackup1".toCharArray());
+        pacote[10] ^= 1;   // dentro do salt: AAD invalida a tag
+        assertThrows(RegraNegocioException.class,
+                () -> Criptografia.decifrarComSenha(pacote, "senhaDoBackup1".toCharArray()));
+    }
+
+    @Test
     void chavesDeDadosSaoUnicasEDe256Bits() {
         SecretKey a = Criptografia.novaChaveDados();
         SecretKey b = Criptografia.novaChaveDados();

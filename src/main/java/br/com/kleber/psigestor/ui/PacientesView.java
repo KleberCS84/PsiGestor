@@ -56,6 +56,7 @@ public class PacientesView {
         Button consent = new Button("Consentimentos");
         consent.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::consentimentos));
         Button exportar = new Button("Exportar dados (LGPD)");
+        exportar.setDisable(!ctx.getSessao().usuario().isPsicologo());
         exportar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::exportar));
         Button anonimizar = new Button("Anonimizar (LGPD)");
         anonimizar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::anonimizar));
@@ -200,7 +201,8 @@ public class PacientesView {
         if (pasta == null) return;
         Ui.executar(() -> {
             var arq = ctx.pacienteService.exportarDadosDoTitular(p.getId(), pasta.toPath());
-            Ui.info("Arquivo gerado:\n" + arq + "\n\nEntregue somente ao titular (ou responsavel legal).");
+            Ui.info("Arquivo gerado:\n" + arq + "\n\nEntregue somente ao titular (ou responsavel legal).\n"
+                    + "O arquivo NAO e cifrado: apague-o deste computador (e da lixeira) depois de entregar.");
         });
     }
 
