@@ -1,11 +1,11 @@
 # PsiGestor
-✅ 146 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto (REVISAO.md, REVISAO_FINAL.md)
+✅ 146 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto ([REVISAO.md](docs/REVISAO.md), [REVISAO_FINAL.md](docs/REVISAO_FINAL.md))
 
 Aplicação desktop para **gestão de consultório de psicologia**: agenda, pacientes, prontuário cifrado, financeiro com repasse, cadastros de serviços e convênios, equipe e controles de privacidade (LGPD).
 
 **Stack:** Java 21 · JavaFX 21 · SQLite (JDBC, SQL puro) · JUnit 5 · Maven
 
-[PRINT: tela painel]
+![Painel](docs/img/1_painel.png)
 
 ## Para quem é e por quê
 
@@ -23,26 +23,26 @@ O objetivo técnico é mostrar um sistema com regras de negócio reais, em camad
 | **Prontuário** | Evoluções cifradas, append-only; correção só por retificação; registros de outro psicologo aparecem como sigilosos |
 | **Financeiro** | Faturado, recebido, a receber, faltas e repasse por profissional |
 | **Serviços & Convênios** | Serviços com código TUSS opcional; convênios com registro ANS e valor por sessão |
-| **Equipe & Repasse** | Usuários (psicólogo/secretaria), desativação, percentual retido pela clínica |
+| **Equipe & Repasse** | Usuários (psicólogo/secretaria), desativação e reativação, percentual retido pela clínica |
 | **Privacidade (LGPD)** | Trilha de auditoria, backup cifrado e restauração, checklist legal |
 
 ### Telas
 
-[PRINT: tela primeiro acesso / login]
+![Primeiro acesso](docs/img/0_primeiro_acesso.png)
 
-[PRINT: tela agenda]
+![Agenda](docs/img/2_agenda.png)
 
-[PRINT: tela pacientes]
+![Pacientes](docs/img/3_pacientes.png)
 
-[PRINT: tela prontuario]
+![Prontuario](docs/img/4_prontuario.png)
 
-[PRINT: tela financeiro]
+![Financeiro](docs/img/5_financeiro.png)
 
-[PRINT: tela servicos e convenios (cadastros)]
+![Servicos e Convenios](docs/img/6_servicos.png)
 
-[PRINT: tela equipe e repasse]
+![Equipe e Repasse](docs/img/7_equipe.png)
 
-[PRINT: tela privacidade]
+![Privacidade (LGPD)](docs/img/8_privacidade.png)
 
 ## Arquitetura
 
@@ -85,7 +85,7 @@ Detalhes completos em [docs/POLITICA_DADOS.md](docs/POLITICA_DADOS.md), [docs/RE
 - **Controle de acesso por papel.** `PSICOLOGO` e `SECRETARIA`. Operações sensíveis (cadastros, repasse, exportação, backup, anonimização) exigem psicólogo e são checadas no service. Usuários podem ser desativados, nunca o último psicólogo ativo.
 - **Bloqueio de login e inatividade.** Após 5 falhas o login é bloqueado com espera progressiva (30 s dobrando, até 15 min). A sessão encerra após 10 minutos sem atividade. Login inexistente ou inativo paga o mesmo custo de PBKDF2 para dificultar enumeração por tempo de resposta. Senha nova exige no mínimo 12 caracteres.
 - **Backup cifrado `.psgb`.** Somente psicólogo. Gerado com `VACUUM INTO`, verificado com `PRAGMA integrity_check` e cifrado com AES-256-GCM, chave derivada de uma senha de backup (PBKDF2, 600.000 iterações, salt por arquivo, cabeçalho autenticado). A senha não é armazenada. A restauração valida senha, integridade e versão do esquema, e preserva uma cópia do banco anterior antes de substituí-lo.
-- **Anonimização após o prazo de guarda.** Somente psicólogo, apenas se o último atendimento (ou o cadastro, se nunca houve atendimento) tiver mais de 5 anos, com confirmação digitando o nome. Remove nome, CPF, nascimento, telefone, e-mail e contato de emergência, mantendo vínculos financeiros e o prontuário cifrado. É irreversível no sistema e auditada.
+- **Anonimização após o prazo de guarda.** Somente psicólogo, apenas se a data de referência mais recente (último atendimento, último registro de prontuário ou cadastro) tiver mais de 5 anos, com confirmação digitando o nome. Remove nome, CPF, nascimento, telefone, e-mail, contato de emergência, responsável legal e número da carteirinha. O paciente é arquivado e não pode mais ser editado, desarquivado nem agendado. Mantém convênio, vínculos financeiros, consentimentos e o prontuário cifrado. É irreversível no sistema e auditada.
 - **Dinheiro em centavos.** Valores trafegam como `long` do schema à UI; o repasse usa `BigDecimal` com `HALF_EVEN`, e parte da clínica mais líquido sempre fecham com o bruto.
 - **Exportação do titular.** TXT restrito ao psicólogo, com nome não previsível e sem sobrescrever arquivos existentes, auditada.
 - **Erros e logs técnicos.** O usuário vê mensagens genéricas; o log técnico em `~/PsiGestor/logs` guarda apenas classe e pilha.
@@ -104,8 +104,8 @@ Detalhes completos em [docs/POLITICA_DADOS.md](docs/POLITICA_DADOS.md), [docs/RE
 JavaFX 21.0.5, sqlite-jdbc 3.46.1.3 e JUnit 5.11.3 são baixados pelo Maven. Não há servidor, perfis Maven nem variáveis de ambiente a configurar.
 
 ```bash
-git clone <url-do-repositorio>
-cd psigestor
+git clone https://github.com/KleberCS84/PsiGestor.git
+cd PsiGestor
 
 mvn javafx:run     # abre o sistema (javafx-maven-plugin 0.0.8, classe br.com.kleber.psigestor.ui.PsiGestorApp)
 mvn clean test     # testes JUnit 5 (maven-surefire-plugin 3.5.2), com SQLite em memória
@@ -137,8 +137,8 @@ Itens avaliados e mantidos em aberto de propósito (detalhes em [docs/REVISAO.md
 - **Contador de tentativas de login em memória.** Fechar e reabrir o aplicativo zera o bloqueio, e ele não protege contra ataque offline ao arquivo `.db`.
 - **Sem recuperação de senha.** Senha perdida significa prontuário irrecuperável.
 - **Eliminação do prontuário não decidida nem implementada.** A anonimização não toca o prontuário, e os triggers impedem apagá-lo.
-- **Anonimização parcial.** `responsavel_legal`, `numero_carteirinha` e `convenio_id` não são alterados. Backups feitos antes da anonimização ainda contêm os dados originais.
-- **Restauração de backup** devolve as senhas vigentes na data do backup.
+- **Anonimização parcial.** `convenio_id` e a observação livre dos consentimentos não são alterados. Backups feitos antes da anonimização ainda contêm os dados originais.
+- **Restauração de backup** devolve o estado da data do backup: as senhas daquela data, usuários desativados depois dela de novo ativos e pacientes anonimizados depois dela de novo identificados. O sistema só avisa antes de restaurar; é preciso revisar a Equipe e refazer as anonimizações.
 - **Metadados do prontuário em claro** (paciente, profissional, data), que revelam frequência e cronologia.
 - **Auditoria sem encadeamento de hash.** Quem tem acesso ao arquivo pode remover os triggers do log; leitura e pesquisa de cadastros e agenda não são auditadas.
 - **Conexão JDBC única e não sincronizada.** Segura enquanto tudo roda na thread JavaFX; uso futuro de threads de fundo exigirá sincronização.
