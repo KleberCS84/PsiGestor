@@ -21,6 +21,13 @@ public class PainelView {
 
     public Node criar() {
         LocalDate hoje = LocalDate.now();
+        VBox tela = Ui.tela(Ui.titulo("Resumo de hoje"), new Label(hoje.format(Ui.DATA)));
+        if (!Ui.executar(() -> preencher(tela, hoje)))
+            tela.getChildren().add(Ui.aviso("Nao foi possivel carregar o resumo. Abra o Painel novamente."));
+        return tela;
+    }
+
+    private void preencher(VBox tela, LocalDate hoje) {
         List<Atendimento> doDia = ctx.agenda.doDia(hoje, null);
         long ativos = doDia.stream().filter(a -> a.getStatus() != StatusAtendimento.CANCELADO).count();
         long aguardando = doDia.stream().filter(a -> a.getStatus() == StatusAtendimento.AGENDADO
@@ -31,8 +38,7 @@ public class PainelView {
                 Ui.card("Atendimentos hoje", String.valueOf(ativos), "cor-azul"),
                 Ui.card("Aguardando atendimento", String.valueOf(aguardando), "cor-laranja"),
                 Ui.card("Aniversariantes do dia", String.valueOf(aniversariantes.size()), "cor-rosa"));
-
-        VBox tela = Ui.tela(Ui.titulo("Resumo de hoje"), new Label(hoje.format(Ui.DATA)), hojeCards);
+        tela.getChildren().add(hojeCards);
 
         if (!aniversariantes.isEmpty()) {
             tela.getChildren().add(Ui.aviso("Aniversariantes: "
@@ -64,6 +70,5 @@ public class PainelView {
                     + " atendimento(s) particular(es) pago(s) sem recibo marcado. Emita no app Receita Saude"
                     + " e depois marque \"Recibo emitido\" na Agenda."));
         }
-        return tela;
     }
 }

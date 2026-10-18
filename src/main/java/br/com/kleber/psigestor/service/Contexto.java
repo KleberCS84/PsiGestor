@@ -5,10 +5,13 @@ import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Sessao;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.function.Supplier;
 
 /**
  * "Caixa de ferramentas" da aplicacao: cria os DAOs e services uma unica vez
@@ -101,6 +104,34 @@ public class Contexto implements AutoCloseable {
         auditar("LOGOUT_INATIVIDADE", "usuario", sessao.usuario().getId());
         sessao = null;
         return true;
+    }
+
+    /**
+     * Executa operacao + auditoria como uma unidade: ou tudo entra no banco, ou nada entra.
+     * Reentrante: chamada dentro de outra transacao so executa (quem abriu faz commit/rollback).
+     */
+    <T> T transacao(Supplier<T> operacao) {
+        Connection con = db.getConexao();
+        try {
+            if (!con.getAutoCommit()) return operacao.get();
+            con.setAutoCommit(false);
+            try {
+                T resultado = operacao.get();
+                con.commit();
+                return resultado;
+            } catch (RuntimeException e) {
+                try { con.rollback(); } catch (SQLException r) { e.addSuppressed(r); }
+                throw e;
+            } finally {
+                con.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new DaoException("Erro na transacao", e);
+        }
+    }
+
+    void transacao(Runnable operacao) {
+        transacao(() -> { operacao.run(); return null; });
     }
 
     /** Registra na trilha de auditoria em nome do usuario logado. */

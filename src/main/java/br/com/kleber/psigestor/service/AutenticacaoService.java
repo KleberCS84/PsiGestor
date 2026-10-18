@@ -65,8 +65,10 @@ public class AutenticacaoService {
             embrulhar(u, Criptografia.novaChaveDados(), senha);
         }
         u.setPercentualRepasseClinica(percentualRepasseClinica);
-        ctx.usuarios.inserir(u);
-        ctx.auditar("CADASTRO_USUARIO", "usuario", u.getId());
+        ctx.transacao(() -> {
+            ctx.usuarios.inserir(u);
+            ctx.auditar("CADASTRO_USUARIO", "usuario", u.getId());
+        });
         return u;
     }
 
@@ -94,11 +96,19 @@ public class AutenticacaoService {
                 throw new RegraNegocioException("Login ou senha invalidos."); // mensagem generica de proposito
             }
             tentativas.remove(chaveTentativa);
-            SecretKey chave = u.isPsicologo() ? abrirChaveProntuario(u, senha) : null;
-            Sessao s = new Sessao(u, chave);
-            ctx.setSessao(s);
-            ctx.auditar("LOGIN", "usuario", u.getId());
-            return s;
+            try {
+                // migracao da chave (se houver) + LOGIN: ou os dois ficam no banco, ou nenhum
+                return ctx.transacao(() -> {
+                    SecretKey chave = u.isPsicologo() ? abrirChaveProntuario(u, senha) : null;
+                    Sessao s = new Sessao(u, chave);
+                    ctx.setSessao(s);
+                    ctx.auditar("LOGIN", "usuario", u.getId());
+                    return s;
+                });
+            } catch (RuntimeException e) {
+                ctx.setSessao(null);   // login sem trilha nao vale
+                throw e;
+            }
         } finally {
             if (senha != null) Arrays.fill(senha, '\0'); // apaga a senha da memoria
         }
@@ -134,8 +144,10 @@ public class AutenticacaoService {
         if (!alvo.isAtivo()) throw new RegraNegocioException("Usuario ja esta desativado.");
         if (alvo.isPsicologo() && ctx.usuarios.contarPsicologosAtivos() <= 1)
             throw new RegraNegocioException("Nao e possivel desativar o ultimo psicologo ativo.");
-        ctx.usuarios.desativar(usuarioId);
-        ctx.auditar("DESATIVACAO_USUARIO", "usuario", usuarioId);
+        ctx.transacao(() -> {
+            ctx.usuarios.desativar(usuarioId);
+            ctx.auditar("DESATIVACAO_USUARIO", "usuario", usuarioId);
+        });
     }
 
     /**
@@ -160,9 +172,11 @@ public class AutenticacaoService {
             u.setSenhaSalt(Criptografia.novoSalt());
             u.setSenhaHash(Criptografia.hashSenha(novaSenha, u.getSenhaSalt()));
             if (dek != null) embrulhar(u, dek, novaSenha);
-            ctx.usuarios.atualizarCredenciais(u);   // um UPDATE so: senha e embrulho mudam juntos
+            ctx.transacao(() -> {
+                ctx.usuarios.atualizarCredenciais(u);   // um UPDATE so: senha e embrulho mudam juntos
+                ctx.auditar("TROCA_SENHA", "usuario", u.getId());
+            });
             ctx.setSessao(new Sessao(u, dek));
-            ctx.auditar("TROCA_SENHA", "usuario", u.getId());
         } finally {
             if (senhaAtual != null) Arrays.fill(senhaAtual, '\0');
             if (novaSenha != null) Arrays.fill(novaSenha, '\0');

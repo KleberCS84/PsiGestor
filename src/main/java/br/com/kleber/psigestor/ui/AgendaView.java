@@ -28,7 +28,7 @@ public class AgendaView {
 
     public Node criar() {
         filtroProf.getItems().add(null);
-        filtroProf.getItems().addAll(ctx.cadastros.listarPsicologos());
+        Ui.executar(() -> filtroProf.getItems().addAll(ctx.cadastros.listarPsicologos()));
         filtroProf.setPromptText("Todos os profissionais");
         dia.setOnAction(e -> carregar());
         filtroProf.setOnAction(e -> carregar());
@@ -69,7 +69,7 @@ public class AgendaView {
 
     private void carregar() {
         Usuario p = filtroProf.getValue();
-        tabela.getItems().setAll(ctx.agenda.doDia(diaSelecionado(), p == null ? null : p.getId()));
+        Ui.executar(() -> tabela.getItems().setAll(ctx.agenda.doDia(diaSelecionado(), p == null ? null : p.getId())));
     }
 
     private Button botaoStatus(String texto, StatusAtendimento status) {
@@ -91,12 +91,14 @@ public class AgendaView {
 
     private void novoAgendamento() {
         ComboBox<Paciente> paciente = new ComboBox<>();
-        paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
         ComboBox<Usuario> prof = new ComboBox<>();
-        prof.getItems().setAll(ctx.cadastros.listarPsicologos());
-        if (ctx.getSessao().usuario().isPsicologo()) prof.setValue(ctx.getSessao().usuario());
         ComboBox<Servico> servico = new ComboBox<>();
-        servico.getItems().setAll(ctx.cadastros.listarServicos());
+        if (!Ui.executar(() -> {
+            paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
+            prof.getItems().setAll(ctx.cadastros.listarPsicologos());
+            servico.getItems().setAll(ctx.cadastros.listarServicos());
+        })) return;
+        if (ctx.getSessao().usuario().isPsicologo()) prof.setValue(ctx.getSessao().usuario());
         if (!servico.getItems().isEmpty()) servico.setValue(servico.getItems().get(0));
         DatePicker data = new DatePicker(dia.getValue());
         TextField hora = new TextField("08:00");

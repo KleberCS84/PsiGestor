@@ -8,6 +8,7 @@ import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Validadores;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,14 +19,30 @@ import java.util.List;
 
 public class PacienteService {
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    static final int NOME_MAX = 120;
+    static final int TELEFONE_MAX = 20;
+    static final int EMAIL_MAX = 120;
+    static final int CONTATO_MAX = 150;
+    static final int RESPONSAVEL_MAX = 120;
+    static final int CARTEIRINHA_MAX = 40;
+    /** Nascimento mais antigo aceito: evita ano digitado errado (ex.: 1099 em vez de 1999). */
+    static final int IDADE_MAXIMA = 130;
     private final Contexto ctx;
 
     PacienteService(Contexto ctx) { this.ctx = ctx; }
 
     public Paciente salvar(Paciente p) {
         ctx.exigirSessao();
+        if (p == null) throw new RegraNegocioException("Informe os dados do paciente.");
         if (Validadores.vazio(p.getNome())) throw new RegraNegocioException("Nome do paciente e obrigatorio.");
-        p.setNome(p.getNome().trim());
+        p.setNome(limitar(p.getNome(), NOME_MAX, "Nome"));
+        p.setTelefone(opcional(p.getTelefone(), TELEFONE_MAX, "Telefone"));
+        p.setEmail(opcional(p.getEmail(), EMAIL_MAX, "E-mail"));
+        p.setContatoEmergencia(opcional(p.getContatoEmergencia(), CONTATO_MAX, "Contato de emergencia"));
+        p.setResponsavelLegal(opcional(p.getResponsavelLegal(), RESPONSAVEL_MAX, "Responsavel legal"));
+        p.setNumeroCarteirinha(opcional(p.getNumeroCarteirinha(), CARTEIRINHA_MAX, "N. carteirinha"));
+        if (p.getTelefone() != null && !Validadores.telefoneValido(p.getTelefone()))
+            throw new RegraNegocioException("Telefone invalido. Informe DDD + numero, ex.: (62) 99999-0000.");
 
         // Minimizacao (LGPD art. 6, III): CPF e opcional; se informado, precisa ser valido e unico.
         if (Validadores.vazio(p.getCpf())) {
@@ -36,18 +53,45 @@ public class PacienteService {
             if (ctx.pacientes.cpfEmUso(p.getCpf(), p.getId()))
                 throw new RegraNegocioException("Ja existe paciente com esse CPF.");
         }
-        if (p.getDataNascimento() != null && p.getDataNascimento().isAfter(LocalDate.now()))
+        LocalDate hoje = ctx.hoje();
+        if (p.getDataNascimento() != null && p.getDataNascimento().isAfter(hoje))
             throw new RegraNegocioException("Data de nascimento no futuro.");
+        if (p.getDataNascimento() != null && p.getDataNascimento().isBefore(hoje.minusYears(IDADE_MAXIMA)))
+            throw new RegraNegocioException("Data de nascimento invalida (mais de " + IDADE_MAXIMA + " anos).");
         // Menor de idade: atendimento depende de autorizacao do responsavel (ECA / Codigo de Etica, art. 8).
-        if (p.isMenorDeIdade(LocalDate.now()) && Validadores.vazio(p.getResponsavelLegal()))
+        if (p.isMenorDeIdade(hoje) && Validadores.vazio(p.getResponsavelLegal()))
             throw new RegraNegocioException("Paciente menor de 18 anos: informe o responsavel legal.");
-        if (!Validadores.vazio(p.getEmail()) && !p.getEmail().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
+        if (p.getEmail() != null && !p.getEmail().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
             throw new RegraNegocioException("E-mail invalido.");
+        // mensagem clara em vez do erro de FK do banco
+        if (p.getConvenioId() != null
+                && ctx.convenios.listar().stream().noneMatch(c -> c.getId().equals(p.getConvenioId())))
+            throw new RegraNegocioException("Convenio nao encontrado.");
 
         boolean novo = p.getId() == null;
-        ctx.pacientes.salvar(p);
-        ctx.auditar(novo ? "CADASTRO_PACIENTE" : "ALTERACAO_PACIENTE", "paciente", p.getId());
+        try {
+            ctx.transacao(() -> {
+                ctx.pacientes.salvar(p);
+                ctx.auditar(novo ? "CADASTRO_PACIENTE" : "ALTERACAO_PACIENTE", "paciente", p.getId());
+            });
+        } catch (RuntimeException e) {
+            if (novo) p.setId(null);   // o INSERT foi desfeito: o id preenchido pelo DAO nao existe
+            throw e;
+        }
         return p;
+    }
+
+    /** Campo obrigatorio: sem espacos nas pontas e dentro do limite da tela/relatorio. */
+    private static String limitar(String valor, int maximo, String campo) {
+        String v = valor.strip();
+        if (v.length() > maximo)
+            throw new RegraNegocioException(campo + ": maximo de " + maximo + " caracteres.");
+        return v;
+    }
+
+    /** Campo opcional: em branco vira null. */
+    private static String opcional(String valor, int maximo, String campo) {
+        return Validadores.vazio(valor) ? null : limitar(valor, maximo, campo);
     }
 
     /**
@@ -58,8 +102,10 @@ public class PacienteService {
         ctx.exigirSessao();
         Paciente p = buscar(pacienteId);
         p.setArquivado(arquivado);
-        ctx.pacientes.salvar(p);
-        ctx.auditar(arquivado ? "ARQUIVAMENTO_PACIENTE" : "REATIVACAO_PACIENTE", "paciente", pacienteId);
+        ctx.transacao(() -> {
+            ctx.pacientes.salvar(p);
+            ctx.auditar(arquivado ? "ARQUIVAMENTO_PACIENTE" : "REATIVACAO_PACIENTE", "paciente", pacienteId);
+        });
     }
 
     public Paciente buscar(int id) {
@@ -80,8 +126,10 @@ public class PacienteService {
         ctx.exigirSessao();
         if (tipo == null) throw new RegraNegocioException("Informe o tipo de consentimento.");
         buscar(pacienteId);   // paciente inexistente: mensagem clara em vez de erro de FK
-        ctx.consentimentos.registrar(pacienteId, tipo, concedido, obs);
-        ctx.auditar((concedido ? "CONSENTIMENTO_" : "REVOGACAO_") + tipo.name(), "paciente", pacienteId);
+        ctx.transacao(() -> {
+            ctx.consentimentos.registrar(pacienteId, tipo, concedido, obs);
+            ctx.auditar((concedido ? "CONSENTIMENTO_" : "REVOGACAO_") + tipo.name(), "paciente", pacienteId);
+        });
     }
 
     public boolean temConsentimento(int pacienteId, TipoConsentimento tipo) {
@@ -125,11 +173,20 @@ public class PacienteService {
         try {
             Files.createDirectories(pasta);
             Path arq = pasta.resolve("dados_paciente_" + pacienteId + ".txt");
-            Files.writeString(arq, sb.toString(), StandardCharsets.UTF_8);
-            ctx.auditar("EXPORTACAO_DADOS_TITULAR", "paciente", pacienteId);
+            // log antes do arquivo, na mesma transacao: arquivo que nao foi gravado desfaz o log
+            ctx.transacao(() -> {
+                ctx.auditar("EXPORTACAO_DADOS_TITULAR", "paciente", pacienteId);
+                try {
+                    Files.writeString(arq, sb.toString(), StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
             return arq;
         } catch (IOException e) {
             throw new RegraNegocioException("Nao foi possivel gravar o arquivo: " + e.getMessage());
+        } catch (UncheckedIOException e) {
+            throw new RegraNegocioException("Nao foi possivel gravar o arquivo: " + e.getCause().getMessage());
         }
     }
 

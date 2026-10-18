@@ -72,4 +72,16 @@ class ValidadoresTest {
         assertTrue(Validadores.vazio("   "));
         assertFalse(Validadores.vazio(" a "));
     }
+
+    @Test
+    void telefoneComDdd() {
+        assertTrue(Validadores.telefoneValido("62999990000"));      // celular
+        assertTrue(Validadores.telefoneValido("(62) 3333-4444"));   // fixo
+        assertTrue(Validadores.telefoneValido("+55 62 99999-0000"));
+        assertFalse(Validadores.telefoneValido("99990000"));        // sem DDD
+        assertFalse(Validadores.telefoneValido("629999900001"));    // 12 digitos sem 55
+        assertFalse(Validadores.telefoneValido("62 9999x0000"));    // letra
+        assertFalse(Validadores.telefoneValido(""));
+        assertFalse(Validadores.telefoneValido(null));
+    }
 }

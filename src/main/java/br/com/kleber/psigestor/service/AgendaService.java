@@ -68,8 +68,10 @@ public class AgendaService {
         } else {
             a.setValor(servico.getValor());
         }
-        ctx.atendimentos.inserir(a);
-        ctx.auditar("AGENDAMENTO", "atendimento", a.getId());
+        ctx.transacao(() -> {
+            ctx.atendimentos.inserir(a);
+            ctx.auditar("AGENDAMENTO", "atendimento", a.getId());
+        });
         return a;
     }
 
@@ -86,8 +88,10 @@ public class AgendaService {
         if (!anterior.ocupaHorario() && status.ocupaHorario())
             verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), a.getPacienteId(), a.getPacienteNome(),
                     a.getInicio(), a.getFim(), a.getId());
-        ctx.atendimentos.atualizarStatus(atendimentoId, status);
-        ctx.auditar("STATUS_" + anterior.name() + "->" + status.name(), "atendimento", atendimentoId);
+        ctx.transacao(() -> {
+            ctx.atendimentos.atualizarStatus(atendimentoId, status);
+            ctx.auditar("STATUS_" + anterior.name() + "->" + status.name(), "atendimento", atendimentoId);
+        });
     }
 
     private void verificarConflitos(int profissionalId, String profissionalNome, int pacienteId, String pacienteNome,
@@ -109,15 +113,19 @@ public class AgendaService {
             throw new RegraNegocioException("Atendimento cancelado nao pode receber pagamento.");
         if (a.isPago())   // sobrescrever apagaria a forma original sem rastro
             throw new RegraNegocioException("Pagamento ja registrado para este atendimento.");
-        ctx.atendimentos.registrarPagamento(atendimentoId, forma);
-        ctx.auditar("PAGAMENTO", "atendimento", atendimentoId);
+        ctx.transacao(() -> {
+            ctx.atendimentos.registrarPagamento(atendimentoId, forma);
+            ctx.auditar("PAGAMENTO", "atendimento", atendimentoId);
+        });
     }
 
     /** O recibo e emitido FORA do sistema (app Receita Saude); aqui so marcamos que foi feito. */
     public void marcarReciboEmitido(int atendimentoId) {
         ctx.exigirSessao();
-        ctx.atendimentos.marcarReciboEmitido(atendimentoId);
-        ctx.auditar("RECIBO_EMITIDO", "atendimento", atendimentoId);
+        ctx.transacao(() -> {
+            ctx.atendimentos.marcarReciboEmitido(atendimentoId);
+            ctx.auditar("RECIBO_EMITIDO", "atendimento", atendimentoId);
+        });
     }
 
     public List<Atendimento> doDia(LocalDate dia, Integer profissionalId) {

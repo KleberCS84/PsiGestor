@@ -23,8 +23,10 @@ public class CadastroService {
         if (s.getDuracaoMin() <= 0) throw new RegraNegocioException("A duracao deve ser maior que zero.");
         if (s.getValor() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
         boolean novo = s.getId() == null;
-        ctx.servicos.salvar(s);
-        ctx.auditar(novo ? "CADASTRO_SERVICO" : "ALTERACAO_SERVICO", "servico", s.getId());
+        ctx.transacao(() -> {
+            ctx.servicos.salvar(s);
+            ctx.auditar(novo ? "CADASTRO_SERVICO" : "ALTERACAO_SERVICO", "servico", s.getId());
+        });
         return s;
     }
 
@@ -34,8 +36,10 @@ public class CadastroService {
         if (c.getValorSessao() < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
         if (c.getPrazoPagamentoDias() < 0) throw new RegraNegocioException("O prazo nao pode ser negativo.");
         boolean novo = c.getId() == null;
-        ctx.convenios.salvar(c);
-        ctx.auditar(novo ? "CADASTRO_CONVENIO" : "ALTERACAO_CONVENIO", "convenio", c.getId());
+        ctx.transacao(() -> {
+            ctx.convenios.salvar(c);
+            ctx.auditar(novo ? "CADASTRO_CONVENIO" : "ALTERACAO_CONVENIO", "convenio", c.getId());
+        });
         return c;
     }
 
@@ -43,8 +47,10 @@ public class CadastroService {
         exigirPsicologo();
         if (percentualClinica < 0 || percentualClinica > 100)
             throw new RegraNegocioException("Use um valor entre 0 e 100.");
-        ctx.usuarios.atualizarRepasse(usuarioId, percentualClinica);
-        ctx.auditar("ALTERACAO_REPASSE", "usuario", usuarioId);
+        ctx.transacao(() -> {
+            ctx.usuarios.atualizarRepasse(usuarioId, percentualClinica);
+            ctx.auditar("ALTERACAO_REPASSE", "usuario", usuarioId);
+        });
     }
 
     public List<Servico> listarServicos() {

@@ -26,7 +26,7 @@ public class ProntuarioView {
                     "Acesso restrito ao psicologo. O conteudo do prontuario e sigiloso (Codigo de Etica "
                     + "Profissional do Psicologo, art. 9) e fica cifrado com a chave pessoal do profissional."));
         }
-        paciente.getItems().setAll(ctx.pacienteService.pesquisar("", true));
+        Ui.executar(() -> paciente.getItems().setAll(ctx.pacienteService.pesquisar("", true)));
         paciente.setPromptText("Escolha o paciente");
         paciente.setPrefWidth(320);
         paciente.setOnAction(e -> carregar());

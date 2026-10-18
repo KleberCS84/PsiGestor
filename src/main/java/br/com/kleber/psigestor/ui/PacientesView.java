@@ -68,7 +68,7 @@ public class PacientesView {
     }
 
     private void carregar() {
-        tabela.getItems().setAll(ctx.pacienteService.pesquisar(busca.getText(), arquivados.isSelected()));
+        Ui.executar(() -> tabela.getItems().setAll(ctx.pacienteService.pesquisar(busca.getText(), arquivados.isSelected())));
     }
 
     private void formulario(Paciente p) {
@@ -83,7 +83,7 @@ public class PacientesView {
         resp.setPromptText("obrigatorio se menor de 18");
         ComboBox<Convenio> conv = new ComboBox<>();
         conv.getItems().add(null);
-        conv.getItems().addAll(ctx.cadastros.listarConvenios());
+        if (!Ui.executar(() -> conv.getItems().addAll(ctx.cadastros.listarConvenios()))) return;
         conv.getItems().stream().filter(c -> c != null && Objects.equals(c.getId(), p.getConvenioId()))
                 .findFirst().ifPresent(conv::setValue);
         conv.setPromptText("Particular");
@@ -108,19 +108,35 @@ public class PacientesView {
         d.getDialogPane().setContent(g);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {
-            p.setNome(nome.getText());
-            p.setCpf(cpf.getText());
-            p.setDataNascimento(nasc.getValue());
-            p.setTelefone(tel.getText());
-            p.setEmail(email.getText());
-            p.setContatoEmergencia(emerg.getText());
-            p.setResponsavelLegal(resp.getText());
-            p.setConvenioId(conv.getValue() == null ? null : conv.getValue().getId());
-            p.setNumeroCarteirinha(cart.getText());
-            if (!Ui.executar(() -> ctx.pacienteService.salvar(p))) ev.consume();
+            // edita uma copia: se a validacao falhar, a linha da tabela nao mostra dados nao salvos
+            Paciente edicao = rascunho(p);
+            edicao.setNome(nome.getText());
+            edicao.setCpf(cpf.getText());
+            edicao.setDataNascimento(nasc.getValue());
+            edicao.setTelefone(tel.getText());
+            edicao.setEmail(email.getText());
+            edicao.setContatoEmergencia(emerg.getText());
+            edicao.setResponsavelLegal(resp.getText());
+            edicao.setConvenioId(conv.getValue() == null ? null : conv.getValue().getId());
+            edicao.setNumeroCarteirinha(cart.getText());
+            if (!Ui.executar(() -> ctx.pacienteService.salvar(edicao))) ev.consume();
         });
         d.showAndWait();
-        carregar();
+        carregar();   // a tabela so passa a mostrar o que foi gravado no banco
+    }
+
+    /** Copia completa (inclusive id e arquivado) para o formulario editar sem tocar na linha da tabela. */
+    static Paciente rascunho(Paciente p) {
+        Paciente c = new Paciente(p.getNome(), p.getDataNascimento(), p.getTelefone());
+        c.setId(p.getId());
+        c.setCpf(p.getCpf());
+        c.setEmail(p.getEmail());
+        c.setContatoEmergencia(p.getContatoEmergencia());
+        c.setResponsavelLegal(p.getResponsavelLegal());
+        c.setConvenioId(p.getConvenioId());
+        c.setNumeroCarteirinha(p.getNumeroCarteirinha());
+        c.setArquivado(p.isArquivado());
+        return c;
     }
 
     private void consentimentos(Paciente p) {
@@ -129,7 +145,7 @@ public class PacientesView {
         hist.getColumns().add(Ui.col("Tipo", c -> c.tipo().getDescricao(), 260));
         hist.getColumns().add(Ui.col("Situacao", c -> c.concedido() ? "Concedido" : "Negado/Revogado", 120));
         hist.getColumns().add(Ui.col("Obs.", Consentimento::observacao, 150));
-        hist.getItems().setAll(ctx.pacienteService.consentimentos(p.getId()));
+        if (!Ui.executar(() -> hist.getItems().setAll(ctx.pacienteService.consentimentos(p.getId())))) return;
         hist.setPrefSize(680, 220);
 
         ComboBox<TipoConsentimento> tipo = new ComboBox<>();
@@ -144,7 +160,7 @@ public class PacientesView {
         registrar.setOnAction(e -> {
             Ui.executar(() -> ctx.pacienteService.registrarConsentimento(p.getId(), tipo.getValue(),
                     concedido.isSelected(), obs.getText()));
-            hist.getItems().setAll(ctx.pacienteService.consentimentos(p.getId()));
+            Ui.executar(() -> hist.getItems().setAll(ctx.pacienteService.consentimentos(p.getId())));
             obs.clear();
         });
         VBox v = new VBox(10, hist, Ui.linha(tipo, concedido), obs, registrar,

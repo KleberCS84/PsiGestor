@@ -19,7 +19,9 @@ public class TelaLogin {
     }
 
     public Parent criar() {
-        VBox caixa = ctx.autenticacao.primeiroAcesso() ? primeiroAcesso() : login();
+        boolean[] primeiro = {false};   // banco ilegivel: mostra o login (o erro ja foi exibido)
+        Ui.executar(() -> primeiro[0] = ctx.autenticacao.primeiroAcesso());
+        VBox caixa = primeiro[0] ? primeiroAcesso() : login();
         caixa.getStyleClass().add("login-caixa");
         caixa.setMaxWidth(460);
         caixa.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);

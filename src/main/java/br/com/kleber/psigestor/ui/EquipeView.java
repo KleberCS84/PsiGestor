@@ -53,7 +53,7 @@ public class EquipeView {
                         + "Contratos de repasse/sublocacao de sala devem estar formalizados por escrito."));
     }
 
-    private void carregar() { tabela.getItems().setAll(ctx.cadastros.listarUsuarios()); }
+    private void carregar() { Ui.executar(() -> tabela.getItems().setAll(ctx.cadastros.listarUsuarios())); }
 
     private void novoUsuario() {
         TextField nome = new TextField();

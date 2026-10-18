@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.dao.DaoException;
+import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.geometry.Insets;
@@ -15,6 +16,7 @@ import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /** Utilitarios de interface reaproveitados por todas as telas. */
@@ -99,17 +101,31 @@ public final class Ui {
         return g;
     }
 
+    public static final String ERRO_GENERICO = "Nao foi possivel concluir a operacao. "
+            + "Os detalhes tecnicos foram registrados no log do sistema.";
+
+    /** Como o erro aparece na tela; os testes trocam por um coletor (sem abrir janela). */
+    static Consumer<String> exibirErro = Ui::erro;
+
     /** Executa uma acao mostrando erros de regra de negocio em uma janela amigavel. */
     public static boolean executar(Runnable acao) {
         try {
             acao.run();
             return true;
-        } catch (RegraNegocioException | DaoException e) {
-            erro(e.getMessage());
         } catch (RuntimeException e) {
-            erro("Erro inesperado: " + e.getMessage());
+            exibirErro.accept(mensagemPara(e));
         }
         return false;
+    }
+
+    /**
+     * Regra de negocio: a mensagem e para o usuario. Qualquer outra (banco, bug): mensagem do SQLite ou
+     * interna nao vai para a tela; a pilha vai para o log tecnico (sem dados de paciente).
+     */
+    static String mensagemPara(RuntimeException e) {
+        if (e instanceof RegraNegocioException) return e.getMessage();
+        LogTecnico.erro(e instanceof DaoException ? "Erro de banco de dados" : "Erro inesperado", e);
+        return ERRO_GENERICO;
     }
 
     public static void erro(String msg) {

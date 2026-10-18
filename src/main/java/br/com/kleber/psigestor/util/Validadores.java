@@ -25,6 +25,16 @@ public final class Validadores {
         return resto == 10 ? 0 : resto;
     }
 
+    private static final Pattern CARACTERES_TELEFONE = Pattern.compile("[0-9()+\\-.\\s]+");
+
+    /** Telefone brasileiro com DDD: 10 (fixo) ou 11 (celular) digitos, opcionalmente com +55 na frente. */
+    public static boolean telefoneValido(String telefone) {
+        if (vazio(telefone) || !CARACTERES_TELEFONE.matcher(telefone).matches()) return false;
+        String d = somenteDigitos(telefone);
+        if ((d.length() == 12 || d.length() == 13) && d.startsWith("55")) d = d.substring(2);
+        return d.length() == 10 || d.length() == 11;
+    }
+
     public static boolean vazio(String s) {
         return s == null || s.isBlank();
     }

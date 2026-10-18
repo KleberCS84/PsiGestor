@@ -9,6 +9,7 @@ import br.com.kleber.psigestor.util.Validadores;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,22 +39,46 @@ public class ProntuarioService {
         if (Validadores.vazio(texto)) throw new RegraNegocioException("O registro esta vazio.");
         ctx.pacienteService.buscar(pacienteId);
         byte[][] ivECifrado = Criptografia.cifrar(texto.strip(), s.chaveProntuario());
-        int id = ctx.evolucoes.inserir(pacienteId, atendimentoId, s.usuario().getId(),
-                ivECifrado[1], ivECifrado[0], retificaId);
-        ctx.auditar(retificaId == null ? "REGISTRO_PRONTUARIO" : "RETIFICACAO_PRONTUARIO", "paciente", pacienteId);
-        return id;
+        // sem log nao ha registro: se a auditoria falhar, o INSERT e desfeito (repetir nao duplica)
+        return ctx.transacao(() -> {
+            int id = ctx.evolucoes.inserir(pacienteId, atendimentoId, s.usuario().getId(),
+                    ivECifrado[1], ivECifrado[0], retificaId);
+            ctx.auditar(retificaId == null ? "REGISTRO_PRONTUARIO" : "RETIFICACAO_PRONTUARIO", "paciente", pacienteId);
+            return id;
+        });
     }
+
+    /** Texto mostrado no lugar de um registro que nao decifra (tag GCM invalida: dado adulterado/corrompido). */
+    public static String ilegivel(int evolucaoId) { return "[registro ilegivel #" + evolucaoId + "]"; }
 
     public List<Evolucao> listar(int pacienteId) {
         Sessao s = exigirPsicologo();
         List<LinhaCifrada> linhas = ctx.evolucoes.listarPorPaciente(pacienteId);
-        ctx.auditar("LEITURA_PRONTUARIO", "paciente", pacienteId);
         int eu = s.usuario().getId();
-        return linhas.stream().map(l -> new Evolucao(
-                l.id(), l.pacienteId(), l.atendimentoId(), l.profissionalId(),
-                LocalDateTime.parse(l.registradoEm(), SQLITE),
-                l.profissionalId() == eu ? Criptografia.decifrar(l.conteudo(), l.iv(), s.chaveProntuario()) : SIGILOSO,
-                l.retificaId())).toList();
+        List<Evolucao> lista = new ArrayList<>();
+        List<Integer> ilegiveis = new ArrayList<>();
+        // registro por registro: um corrompido nao pode esconder o resto do prontuario
+        for (LinhaCifrada l : linhas) {
+            String texto;
+            if (l.profissionalId() != eu) {
+                texto = SIGILOSO;
+            } else {
+                try {
+                    texto = Criptografia.decifrar(l.conteudo(), l.iv(), s.chaveProntuario());
+                } catch (RegraNegocioException e) {
+                    texto = ilegivel(l.id());
+                    ilegiveis.add(l.id());
+                }
+            }
+            lista.add(new Evolucao(l.id(), l.pacienteId(), l.atendimentoId(), l.profissionalId(),
+                    LocalDateTime.parse(l.registradoEm(), SQLITE), texto, l.retificaId()));
+        }
+        // so audita a leitura depois de montar a lista inteira (leitura que falhou nao vira log)
+        ctx.transacao(() -> {
+            ilegiveis.forEach(id -> ctx.auditar("REGISTRO_ILEGIVEL", "evolucao", id));
+            ctx.auditar("LEITURA_PRONTUARIO", "paciente", pacienteId);
+        });
+        return lista;
     }
 
     private Sessao exigirPsicologo() {

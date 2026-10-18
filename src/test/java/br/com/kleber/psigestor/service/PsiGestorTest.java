@@ -531,6 +531,131 @@ class PsiGestorTest {
         assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.aniversariantes(dia));
     }
 
+    // ---------- M2: operacao + auditoria atomicas ----------
+    /** Simula disco cheio/lock so na trilha de auditoria. */
+    private void logFalhando(boolean falhar) throws SQLException {
+        try (Statement st = ctx.getConexaoParaTeste().createStatement()) {
+            if (falhar) st.execute("CREATE TRIGGER teste_log_falha BEFORE INSERT ON log_acesso "
+                    + "BEGIN SELECT RAISE(ABORT, 'log indisponivel'); END");
+            else st.execute("DROP TRIGGER teste_log_falha");
+        }
+    }
+
+    private int contar(String tabela) throws SQLException {
+        try (Statement st = ctx.getConexaoParaTeste().createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + tabela)) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    @Test
+    void prontuarioSemLogNaoEGravadoERepetirNaoDuplica() throws SQLException {
+        logFalhando(true);
+        assertThrows(DaoException.class, () -> ctx.prontuario.registrar(joao.getId(), null, "Sessao 1"));
+        assertEquals(0, contar("evolucao"));
+        logFalhando(false);
+        ctx.prontuario.registrar(joao.getId(), null, "Sessao 1");   // usuario repete apos o erro
+        assertEquals(1, contar("evolucao"));
+        assertTrue(ctx.getConexaoParaTeste().getAutoCommit());
+    }
+
+    @Test
+    void pacienteNovoSemLogNaoEGravadoEPerdeOId() throws SQLException {
+        int antes = contar("paciente");
+        Paciente maria = new Paciente("Maria", LocalDate.of(1985, 1, 1), null);
+        logFalhando(true);
+        assertThrows(DaoException.class, () -> ctx.pacienteService.salvar(maria));
+        assertEquals(antes, contar("paciente"));
+        assertNull(maria.getId());   // senao a nova tentativa viraria UPDATE de linha inexistente
+        logFalhando(false);
+        ctx.pacienteService.salvar(maria);
+        assertEquals(antes + 1, contar("paciente"));
+    }
+
+    @Test
+    void agendamentoSemLogNaoEGravado() throws SQLException {
+        logFalhando(true);
+        assertThrows(DaoException.class, () -> ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 20, 10, 0), Modalidade.PRESENCIAL, false));
+        assertEquals(0, contar("atendimento"));
+    }
+
+    @Test
+    void transacaoDesfazTudoEEReentrante() throws SQLException {
+        int antes = contar("log_acesso");
+        assertThrows(IllegalStateException.class, () -> ctx.transacao(() -> {
+            ctx.auditar("TESTE_EXTERNO", null, null);
+            ctx.transacao(() -> ctx.auditar("TESTE_INTERNO", null, null));   // aninhada: nao faz commit
+            throw new IllegalStateException("falha depois dos logs");
+        }));
+        assertEquals(antes, contar("log_acesso"));
+        assertTrue(ctx.getConexaoParaTeste().getAutoCommit());
+        ctx.transacao(() -> ctx.auditar("TESTE_OK", null, null));
+        assertEquals(antes + 1, contar("log_acesso"));
+    }
+
+    // ---------- M3: registro corrompido nao derruba o prontuario ----------
+    @Test
+    void registroIlegivelNaoDerrubaALista() {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro bom 1");
+        int ruim = ctx.evolucoes.inserir(joao.getId(), null, ana.getId(), new byte[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                11, 12, 13, 14, 15, 16, 17}, new byte[12], null);   // tag GCM invalida
+        ctx.prontuario.registrar(joao.getId(), null, "Registro bom 2");
+
+        List<Evolucao> lista = ctx.prontuario.listar(joao.getId());
+        assertEquals(3, lista.size());
+        assertEquals(ProntuarioService.ilegivel(ruim),
+                lista.stream().filter(e -> e.id() == ruim).findFirst().orElseThrow().texto());
+        assertEquals("[registro ilegivel #" + ruim + "]", ProntuarioService.ilegivel(ruim));
+        assertTrue(lista.stream().anyMatch(e -> e.texto().equals("Registro bom 1")));
+        assertTrue(lista.stream().anyMatch(e -> e.texto().equals("Registro bom 2")));
+
+        var logs = ctx.logs.ultimos(5);
+        assertTrue(logs.stream().anyMatch(l -> l.acao().equals("REGISTRO_ILEGIVEL")
+                && "evolucao".equals(l.entidade()) && Integer.valueOf(ruim).equals(l.entidadeId())));
+        assertEquals("LEITURA_PRONTUARIO", logs.get(0).acao());   // leitura auditada por ultimo, apos decifrar
+    }
+
+    // ---------- B7: validacoes de paciente ----------
+    @Test
+    void pacienteNuloOuCamposGrandesSaoRecusados() {
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(null));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(
+                new Paciente("x".repeat(PacienteService.NOME_MAX + 1), null, null)));
+        Paciente p = new Paciente("Maria", null, null);
+        p.setContatoEmergencia("y".repeat(PacienteService.CONTATO_MAX + 1));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(p));
+    }
+
+    @Test
+    void telefoneDoPacienteEValidado() {
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(new Paciente("Maria", null, "123")));
+        assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(new Paciente("Maria", null, "abc defg hijk")));
+        Paciente ok = ctx.pacienteService.salvar(new Paciente("Maria", null, " (62) 99999-0000 "));
+        assertEquals("(62) 99999-0000", ok.getTelefone());
+        Paciente semTelefone = ctx.pacienteService.salvar(new Paciente("Carla", null, "   "));
+        assertNull(semTelefone.getTelefone());
+    }
+
+    @Test
+    void nascimentoMuitoAntigoERecusado() {
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.pacienteService.salvar(new Paciente("Maria", LocalDate.of(1800, 1, 1), null)));
+        assertDoesNotThrow(() -> ctx.pacienteService.salvar(new Paciente("Dona Rosa", LocalDate.of(1930, 1, 1), null)));
+    }
+
+    @Test
+    void convenioInexistenteDaMensagemClara() {
+        Paciente p = new Paciente("Maria", null, null);
+        p.setConvenioId(999);
+        RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(p));
+        assertEquals("Convenio nao encontrado.", e.getMessage());
+        Convenio c = ctx.convenios.salvar(new Convenio("Unimed", null, 90, 30));
+        p.setConvenioId(c.getId());
+        assertDoesNotThrow(() -> ctx.pacienteService.salvar(p));
+    }
+
     /** Troca o relogio fixo por um que o teste pode avancar (comeca no mesmo instante). */
     private RelogioAjustavel relogioAjustavel() {
         RelogioAjustavel r = new RelogioAjustavel(ctx.agora(), ZoneId.systemDefault());

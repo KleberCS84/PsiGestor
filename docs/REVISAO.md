@@ -73,12 +73,14 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 - Como ficou no log: `log_acesso.detalhe` grava `login=<login cadastrado>` (maximo 40 caracteres) quando o login existe, e so `login inexistente` quando nao existe, nunca o texto digitado (pode ser a senha digitada no campo errado).
 - Limite conhecido: o contador de tentativas fica em memoria; fechar e reabrir o app zera o bloqueio. Nao protege contra ataque offline ao arquivo `.db`.
 
-**M2. Auditoria nao e atomica com a operacao**
+[x] **M2. Auditoria nao e atomica com a operacao**
+- Corrigido em: `service/Contexto.java` (`transacao`), `service/ProntuarioService.java`, `service/PacienteService.java`, `service/AgendaService.java`, `service/CadastroService.java`, `service/AutenticacaoService.java`, `service/BackupService.java` (`VACUUM INTO` nao roda em transacao: backup sem log e apagado)
 - `service/ProntuarioService.java:41-43`, `service/PacienteService.java:48-49`, `service/AgendaService.java:61-62` e demais (nenhuma usa transacao; `Database` mantem `autoCommit=true`).
 - Cenario: o registro de prontuario e inserido, depois `auditar` falha (disco cheio/lock): o usuario ve erro, repete e cria registro duplicado que nunca pode ser apagado (triggers); ou o registro existe sem entrada de log. Na leitura, `listar` audita antes de decifrar (`ProntuarioService.java:50`), registrando leitura mesmo que ela falhe.
 - Correcao: utilitario `transacao(Runnable)` em `Contexto` (setAutoCommit(false)/commit/rollback) englobando operacao + log.
 
-**M3. Um registro corrompido impede a leitura de todo o prontuario do paciente**
+[x] **M3. Um registro corrompido impede a leitura de todo o prontuario do paciente**
+- Corrigido em: `service/ProntuarioService.java` (`listar`, `ilegivel`; evento `REGISTRO_ILEGIVEL` em `log_acesso`)
 - `service/ProntuarioService.java:52-56` + `util/Criptografia.java:101-103`.
 - Descricao: `decifrar` lanca `RegraNegocioException`; o `stream().map` nao trata, entao um unico registro com tag invalida derruba a lista inteira.
 - Correcao: capturar por registro, mostrar "[registro ilegivel #id]" e auditar o incidente.
@@ -116,11 +118,13 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
 
 ### BAIXA
 
-**B1. Excecoes engolidas sem log; mensagens internas ao usuario**
+[x] **B1. Excecoes engolidas sem log; mensagens internas ao usuario**
+- Corrigido em: `util/LogTecnico.java` (novo; `~/PsiGestor/logs/psigestor-N.log`, so classe e pilha, sem mensagens exceto do driver SQL), `ui/Ui.java` (`executar`, `mensagemPara`, `ERRO_GENERICO`), `ui/PsiGestorApp.java` (`DefaultUncaughtExceptionHandler`), `service/BackupService.java`
 - `ui/Ui.java:103-113`, `dao/DaoException.java:5`, `service/BackupService.java:40`.
 - Nao ha logger nem `printStackTrace` no projeto. `Ui.executar` mostra `"Erro inesperado: " + e.getMessage()` e descarta o stack trace; `DaoException` expoe mensagens do SQLite (ex.: "FOREIGN KEY constraint failed", caminhos). Nao ha `Thread.setDefaultUncaughtExceptionHandler`. Sugestao: `java.util.logging` em arquivo local sem dados de paciente e mensagem generica ao usuario.
 
-**B2. Telas chamam servicos fora de `Ui.executar`**
+[x] **B2. Telas chamam servicos fora de `Ui.executar`**
+- Corrigido em: `ui/TelaPrincipal.java` (`item`, `abrirProntuario`), `ui/PainelView.java`, `ui/EquipeView.java`, `ui/PrivacidadeView.java`, `ui/PacientesView.java`, `ui/AgendaView.java`, `ui/ProntuarioView.java`, `ui/CadastrosView.java`, `ui/TelaLogin.java`, `ui/PsiGestorApp.java` (botao Sair)
 - `ui/PainelView.java:24-57`, `ui/EquipeView.java:50`, `ui/PrivacidadeView.java:25`, `ui/TelaPrincipal.java:61` (`botoes.get(0).fire()` abre o Painel na criacao da tela principal). Uma `DaoException` ali sobe sem tratamento e a janela pode ficar em branco.
 
 **B3. Arquivos criados com permissoes padrao**
@@ -136,7 +140,8 @@ Contagem: 1 Critica, 5 Altas, 9 Medias, 9 Baixas (total 24).
   - Corrigido em: `util/Criptografia.java` (`pbkdf2`)
 - A UI converte `String` -> `char[]` (`ui/TelaLogin.java:41`, `TrocaSenhaDialog.java:47`) e a `String` imutavel nao e zerada. `AutenticacaoService.cadastrar` nao zera a senha (so `entrar` e `trocarSenha` zeram). A `SecretKeySpec` da DEK permanece na `Sessao` apos `sair()` ate o GC. Mitigacao parcial; documentar.
 
-**B7. Validacoes de paciente incompletas**
+[x] **B7. Validacoes de paciente incompletas**
+- Corrigido em: `service/PacienteService.java` (`salvar`: nulo, limites de tamanho, telefone, nascimento ate 130 anos, convenio inexistente), `util/Validadores.java` (`telefoneValido`), `ui/PacientesView.java` (`rascunho`: formulario edita uma copia)
 - `service/PacienteService.java:25-51`: sem limite de tamanho de campos, telefone nao validado, `p == null` gera NPE, data de nascimento muito antiga aceita, `convenioId` inexistente cai em `DaoException` com mensagem de FK. A UI muta o objeto `Paciente` da tabela antes de validar (`ui/PacientesView.java:111-119`); se a validacao falha, a linha exibe dados nao salvos ate recarregar.
 
 [x] **B8. Entradas sem validacao em consentimento/pagamento; leituras sem sessao**

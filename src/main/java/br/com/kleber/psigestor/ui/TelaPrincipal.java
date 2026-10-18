@@ -69,7 +69,8 @@ public class TelaPrincipal {
         b.setOnAction(e -> {
             botoes.forEach(x -> x.getStyleClass().remove("ativo"));
             b.getStyleClass().add("ativo");
-            mostrar(tela.get());
+            // criar() de cada tela le o banco: erro ali vira aviso em vez de janela em branco
+            Ui.executar(() -> mostrar(tela.get()));
         });
         botoes.add(b);
         return b;
@@ -87,6 +88,6 @@ public class TelaPrincipal {
     void abrirProntuario(int pacienteId) {
         botoes.forEach(x -> x.getStyleClass().remove("ativo"));
         botoes.get(3).getStyleClass().add("ativo");
-        mostrar(new ProntuarioView(ctx, pacienteId).criar());
+        Ui.executar(() -> mostrar(new ProntuarioView(ctx, pacienteId).criar()));
     }
 }

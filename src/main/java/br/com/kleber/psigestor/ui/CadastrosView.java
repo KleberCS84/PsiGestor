@@ -82,8 +82,10 @@ public class CadastrosView {
     }
 
     private void carregar() {
-        servicos.getItems().setAll(ctx.cadastros.listarServicos());
-        convenios.getItems().setAll(ctx.cadastros.listarConvenios());
+        Ui.executar(() -> {
+            servicos.getItems().setAll(ctx.cadastros.listarServicos());
+            convenios.getItems().setAll(ctx.cadastros.listarConvenios());
+        });
     }
 
     static int inteiro(String s) {
