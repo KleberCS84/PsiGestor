@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.dao;
 
 import br.com.kleber.psigestor.model.Servico;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ public class ServicoDAO {
             ps.setInt(3, s.getDuracaoMin());
             ps.setDouble(4, s.getValor());
             if (!novo) ps.setInt(5, s.getId());
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Servico nao encontrado.");
             if (novo) s.setId(JdbcUtil.ultimoId(ps));
             return s;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar servico", e); }

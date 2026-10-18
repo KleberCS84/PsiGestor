@@ -104,11 +104,13 @@ public final class Criptografia {
     }
 
     private static byte[] pbkdf2(char[] senha, String saltB64) {
+        PBEKeySpec spec = new PBEKeySpec(senha, Base64.getDecoder().decode(saltB64), ITERACOES, TAM_CHAVE_BITS);
         try {
-            PBEKeySpec spec = new PBEKeySpec(senha, Base64.getDecoder().decode(saltB64), ITERACOES, TAM_CHAVE_BITS);
             return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
+        } finally {
+            spec.clearPassword();   // o PBEKeySpec guarda uma copia propria do char[] da senha
         }
     }
 }

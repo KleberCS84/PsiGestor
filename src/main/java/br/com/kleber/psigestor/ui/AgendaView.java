@@ -2,11 +2,13 @@ package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.model.*;
 import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -30,9 +32,9 @@ public class AgendaView {
         dia.setOnAction(e -> carregar());
         filtroProf.setOnAction(e -> carregar());
         Button anterior = new Button("<");
-        anterior.setOnAction(e -> dia.setValue(dia.getValue().minusDays(1)));
+        anterior.setOnAction(e -> dia.setValue(diaSelecionado().minusDays(1)));
         Button proximo = new Button(">");
-        proximo.setOnAction(e -> dia.setValue(dia.getValue().plusDays(1)));
+        proximo.setOnAction(e -> dia.setValue(diaSelecionado().plusDays(1)));
         Button novo = new Button("+ Novo agendamento");
         novo.getStyleClass().add("primario");
         novo.setOnAction(e -> novoAgendamento());
@@ -66,7 +68,7 @@ public class AgendaView {
 
     private void carregar() {
         Usuario p = filtroProf.getValue();
-        tabela.getItems().setAll(ctx.agenda.doDia(dia.getValue(), p == null ? null : p.getId()));
+        tabela.getItems().setAll(ctx.agenda.doDia(diaSelecionado(), p == null ? null : p.getId()));
     }
 
     private Button botaoStatus(String texto, StatusAtendimento status) {
@@ -121,18 +123,30 @@ public class AgendaView {
             boolean ok = Ui.executar(() -> {
                 if (paciente.getValue() == null || prof.getValue() == null || servico.getValue() == null)
                     throw new br.com.kleber.psigestor.util.RegraNegocioException("Preencha paciente, profissional e servico.");
-                LocalTime h;
-                try { h = LocalTime.parse(hora.getText().trim()); }
-                catch (DateTimeParseException ex) {
-                    throw new br.com.kleber.psigestor.util.RegraNegocioException("Hora invalida. Use HH:mm, ex.: 14:30");
-                }
                 ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
-                        data.getValue().atTime(h), modalidade.getValue(), convenio.isSelected());
+                        montarInicio(data.getValue(), hora.getText()), modalidade.getValue(), convenio.isSelected());
             });
             if (!ok) ev.consume();
         });
         d.showAndWait();
-        dia.setValue(data.getValue());
+        if (data.getValue() != null) dia.setValue(data.getValue());
         carregar();
+    }
+
+    /** Data do DatePicker (pode vir nula se o usuario limpar o campo) + hora digitada "HH:mm". */
+    static LocalDateTime montarInicio(LocalDate data, String hora) {
+        if (data == null) throw new RegraNegocioException("Informe a data.");
+        try {
+            if (hora == null) throw new DateTimeParseException("vazio", "", 0);
+            return data.atTime(LocalTime.parse(hora.trim()));
+        } catch (DateTimeParseException ex) {
+            throw new RegraNegocioException("Hora invalida. Use HH:mm, ex.: 14:30");
+        }
+    }
+
+    /** O usuario pode apagar o texto do DatePicker; nesse caso volta para hoje. */
+    private LocalDate diaSelecionado() {
+        if (dia.getValue() == null) dia.setValue(LocalDate.now());
+        return dia.getValue();
     }
 }

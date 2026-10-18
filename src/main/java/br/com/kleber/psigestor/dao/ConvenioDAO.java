@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.dao;
 
 import br.com.kleber.psigestor.model.Convenio;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ public class ConvenioDAO {
             ps.setDouble(3, c.getValorSessao());
             ps.setInt(4, c.getPrazoPagamentoDias());
             if (!novo) ps.setInt(5, c.getId());
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Convenio nao encontrado.");
             if (novo) c.setId(JdbcUtil.ultimoId(ps));
             return c;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar convenio", e); }

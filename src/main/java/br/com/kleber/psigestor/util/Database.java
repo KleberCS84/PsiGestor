@@ -24,8 +24,9 @@ public class Database implements AutoCloseable {
      * O schema.sql usa "CREATE TABLE IF NOT EXISTS", que NAO acrescenta colunas novas
      * em um banco que ja existe. Por isso cada mudanca de estrutura vira um passo em migrar().
      *  v1: usuario.chave_cifrada + usuario.chave_iv (criptografia de envelope / troca de senha)
+     *  v2: convenio.prazo_pagamento_dias >= 0 (triggers: SQLite nao acrescenta CHECK em tabela existente)
      */
-    static final int VERSAO_ESQUEMA = 1;
+    static final int VERSAO_ESQUEMA = 2;
 
     private final Connection conexao;
 
@@ -65,6 +66,17 @@ public class Database implements AutoCloseable {
             if (versao < 1) {
                 adicionarColunaSeFaltar(st, "usuario", "chave_cifrada", "BLOB");
                 adicionarColunaSeFaltar(st, "usuario", "chave_iv", "BLOB");
+            }
+            if (versao < 2) {
+                // banco novo ja tem o CHECK (schema.sql); banco antigo so pode ganhar a regra via trigger
+                st.execute("""
+                    CREATE TRIGGER IF NOT EXISTS trg_convenio_prazo_ins BEFORE INSERT ON convenio
+                    WHEN NEW.prazo_pagamento_dias < 0
+                    BEGIN SELECT RAISE(ABORT, 'Prazo de pagamento nao pode ser negativo.'); END""");
+                st.execute("""
+                    CREATE TRIGGER IF NOT EXISTS trg_convenio_prazo_upd BEFORE UPDATE OF prazo_pagamento_dias ON convenio
+                    WHEN NEW.prazo_pagamento_dias < 0
+                    BEGIN SELECT RAISE(ABORT, 'Prazo de pagamento nao pode ser negativo.'); END""");
             }
             st.execute("PRAGMA user_version = " + VERSAO_ESQUEMA);
             conexao.commit();

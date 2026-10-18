@@ -3,12 +3,14 @@ package br.com.kleber.psigestor.dao;
 import br.com.kleber.psigestor.model.Atendimento;
 import br.com.kleber.psigestor.model.Modalidade;
 import br.com.kleber.psigestor.model.StatusAtendimento;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class AtendimentoDAO {
     /** Formato fixo: permite comparar datas como texto no SQLite ("2026-10-11T14:00"). */
@@ -62,14 +64,29 @@ public class AtendimentoDAO {
         executar("UPDATE atendimento SET recibo_emitido = 1 WHERE id = ?", id);
     }
 
+    public Optional<Atendimento> buscar(int id) {
+        try (PreparedStatement ps = con.prepareStatement(SELECT_BASE + " WHERE a.id = ?")) {
+            ps.setInt(1, id);
+            return listar(ps).stream().findFirst();
+        } catch (SQLException e) { throw new DaoException("Erro ao buscar atendimento", e); }
+    }
+
     /** Atendimentos do profissional que se sobrepoem ao intervalo (ignorando cancelados). */
     public int contarConflitos(int profissionalId, LocalDateTime inicio, LocalDateTime fim, Integer ignorarId) {
-        String sql = """
-            SELECT COUNT(*) FROM atendimento
-             WHERE profissional_id = ? AND status <> 'CANCELADO'
-               AND inicio < ? AND fim > ? AND id <> ?""";
+        return contarSobrepostos("profissional_id", profissionalId, inicio, fim, ignorarId);
+    }
+
+    /** Idem, para o mesmo paciente (nao pode estar em duas sessoes ao mesmo tempo). */
+    public int contarConflitosPaciente(int pacienteId, LocalDateTime inicio, LocalDateTime fim, Integer ignorarId) {
+        return contarSobrepostos("paciente_id", pacienteId, inicio, fim, ignorarId);
+    }
+
+    /** coluna vem sempre de constante interna, nunca do usuario. */
+    private int contarSobrepostos(String coluna, int valor, LocalDateTime inicio, LocalDateTime fim, Integer ignorarId) {
+        String sql = "SELECT COUNT(*) FROM atendimento WHERE " + coluna + " = ? AND status <> 'CANCELADO'"
+                + " AND inicio < ? AND fim > ? AND id <> ?";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, profissionalId);
+            ps.setInt(1, valor);
             ps.setString(2, fim.format(FMT));
             ps.setString(3, inicio.format(FMT));
             ps.setInt(4, ignorarId == null ? -1 : ignorarId);
@@ -126,7 +143,8 @@ public class AtendimentoDAO {
     private void executar(String sql, Object... params) {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
-            ps.executeUpdate();
+            // id inexistente: sem isso o service auditaria um evento que nao aconteceu
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Atendimento nao encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar atendimento", e); }
     }
 }

@@ -4,6 +4,7 @@ import br.com.kleber.psigestor.model.Convenio;
 import br.com.kleber.psigestor.model.Servico;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.util.RegraNegocioException;
+import br.com.kleber.psigestor.util.Validadores;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 
@@ -37,7 +38,7 @@ public class CadastrosView {
             if (Ui.executar(() -> {
                 if (sNome.getText().isBlank()) throw new RegraNegocioException("Informe o nome do servico.");
                 ctx.servicos.salvar(new Servico(sNome.getText().trim(), vazioParaNull(sTuss.getText()),
-                        inteiro(sDur.getText()), numero(sValor.getText())));
+                        inteiro(sDur.getText()), Validadores.numeroBR(sValor.getText()).doubleValue()));
             })) { sNome.clear(); sTuss.clear(); sValor.clear(); carregar(); }
         });
 
@@ -62,7 +63,7 @@ public class CadastrosView {
             if (Ui.executar(() -> {
                 if (cNome.getText().isBlank()) throw new RegraNegocioException("Informe o nome do convenio.");
                 ctx.convenios.salvar(new Convenio(cNome.getText().trim(), vazioParaNull(cAns.getText()),
-                        numero(cValor.getText()), inteiro(cPrazo.getText())));
+                        Validadores.numeroBR(cValor.getText()).doubleValue(), inteiro(cPrazo.getText())));
             })) { cNome.clear(); cAns.clear(); cValor.clear(); carregar(); }
         });
 
@@ -81,14 +82,6 @@ public class CadastrosView {
     private void carregar() {
         servicos.getItems().setAll(ctx.servicos.listar());
         convenios.getItems().setAll(ctx.convenios.listar());
-    }
-
-    static double numero(String s) {
-        try {
-            return s == null || s.isBlank() ? 0 : Double.parseDouble(s.trim().replace(".", "").replace(",", "."));
-        } catch (NumberFormatException e) {
-            throw new RegraNegocioException("Valor invalido: " + s);
-        }
     }
 
     static int inteiro(String s) {

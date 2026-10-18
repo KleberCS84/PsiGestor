@@ -4,6 +4,7 @@ import br.com.kleber.psigestor.model.Papel;
 import br.com.kleber.psigestor.model.Usuario;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.util.RegraNegocioException;
+import br.com.kleber.psigestor.util.Validadores;
 import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.control.*;
@@ -34,7 +35,7 @@ public class EquipeView {
             TextInputDialog d = new TextInputDialog(String.valueOf(u.getPercentualRepasseClinica()));
             d.setHeaderText("Percentual retido pela clinica sobre as sessoes de " + u.getNome());
             d.showAndWait().ifPresent(t -> Ui.executar(() -> {
-                double p = CadastrosView.numero(t);
+                double p = Validadores.numeroBR(t).doubleValue();
                 if (p < 0 || p > 100) throw new RegraNegocioException("Use um valor entre 0 e 100.");
                 ctx.usuarios.atualizarRepasse(u.getId(), p);
             }));
@@ -71,7 +72,7 @@ public class EquipeView {
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {
             if (!Ui.executar(() -> ctx.autenticacao.cadastrar(nome.getText(), login.getText(),
-                    senha.getText().toCharArray(), papel.getValue(), crp.getText(), CadastrosView.numero(perc.getText()))))
+                    senha.getText().toCharArray(), papel.getValue(), crp.getText(), Validadores.numeroBR(perc.getText()).doubleValue())))
                 ev.consume();
         });
         d.showAndWait();

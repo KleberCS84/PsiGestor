@@ -2,6 +2,8 @@ package br.com.kleber.psigestor.util;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ValidadoresTest {
@@ -37,6 +39,28 @@ class ValidadoresTest {
         assertEquals("12345678900", Validadores.somenteDigitos("123.456.789-00"));
         assertEquals("", Validadores.somenteDigitos(null));
         assertEquals("", Validadores.somenteDigitos("abc"));
+    }
+
+    /** Antes: CadastrosView.numero("150.00") devolvia 15000 e "7.5" devolvia 75. */
+    @Test
+    void numeroBRAceitaFormatosSemAmbiguidade() {
+        assertEquals(0, new BigDecimal("150.00").compareTo(Validadores.numeroBR("150.00")));
+        assertEquals(0, new BigDecimal("7.5").compareTo(Validadores.numeroBR("7.5")));
+        assertEquals(0, new BigDecimal("80.50").compareTo(Validadores.numeroBR("80,50")));
+        assertEquals(0, new BigDecimal("1234.56").compareTo(Validadores.numeroBR("1.234,56")));
+        assertEquals(0, new BigDecimal("1234567").compareTo(Validadores.numeroBR("1.234.567")));
+        assertEquals(0, new BigDecimal("200").compareTo(Validadores.numeroBR(" 200 ")));
+        assertEquals(0, BigDecimal.ZERO.compareTo(Validadores.numeroBR("")));
+        assertEquals(0, BigDecimal.ZERO.compareTo(Validadores.numeroBR(null)));
+    }
+
+    /** Antes: "NaN" passava (e passava na faixa 0..100 do repasse) e "1.234" virava 1234 sem aviso. */
+    @Test
+    void numeroBRRejeitaFormatosAmbiguosOuInvalidos() {
+        for (String s : new String[] { "1.234", "1,234", "1,234.56", "1.23,4", "1,2,3", "NaN", "Infinity",
+                "1e9", "-5", "12a", ",5", "5,", "1 000" }) {
+            assertThrows(RegraNegocioException.class, () -> Validadores.numeroBR(s), s);
+        }
     }
 
     @Test

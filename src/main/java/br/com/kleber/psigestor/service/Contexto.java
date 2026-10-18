@@ -5,6 +5,9 @@ import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Sessao;
 
+import java.time.Clock;
+import java.time.LocalDate;
+
 /**
  * "Caixa de ferramentas" da aplicacao: cria os DAOs e services uma unica vez
  * e guarda a sessao do usuario logado (injecao de dependencia feita a mao).
@@ -13,6 +16,7 @@ public class Contexto implements AutoCloseable {
 
     private final Database db;
     private Sessao sessao;
+    private Clock relogio = Clock.systemDefaultZone();
 
     public final UsuarioDAO usuarios;
     public final PacienteDAO pacientes;
@@ -56,6 +60,12 @@ public class Contexto implements AutoCloseable {
     java.sql.Connection getConexaoParaTeste() { return db.getConexao(); }
 
     void setSessao(Sessao sessao) { this.sessao = sessao; }
+
+    /** Data de hoje pelo relogio do contexto (fixavel nos testes). */
+    LocalDate hoje() { return LocalDate.now(relogio); }
+
+    /** Somente para testes automatizados (datas fixas nao "vencem" com o passar do tempo). */
+    void setRelogio(Clock relogio) { this.relogio = relogio; }
 
     /** Garante que ha alguem logado; devolve a sessao. */
     Sessao exigirSessao() {

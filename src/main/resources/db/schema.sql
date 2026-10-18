@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS convenio (
     nome                  TEXT NOT NULL UNIQUE,
     registro_ans          TEXT,
     valor_sessao          REAL NOT NULL DEFAULT 0 CHECK (valor_sessao >= 0),
-    prazo_pagamento_dias  INTEGER NOT NULL DEFAULT 30
+    prazo_pagamento_dias  INTEGER NOT NULL DEFAULT 30 CHECK (prazo_pagamento_dias >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS servico (

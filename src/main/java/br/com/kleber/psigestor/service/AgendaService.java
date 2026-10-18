@@ -8,6 +8,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public class AgendaService {
+    static final int DIAS_RETROATIVOS = 30;
+    static final int ANOS_A_FRENTE = 1;
+
     private final Contexto ctx;
 
     AgendaService(Contexto ctx) { this.ctx = ctx; }
@@ -15,7 +18,8 @@ public class AgendaService {
     /**
      * Agenda uma sessao. Regras:
      *  - paciente ativo; profissional deve ser psicologo;
-     *  - sem sobreposicao de horario para o mesmo profissional;
+     *  - data entre 30 dias atras (lancar sessao ja feita) e 1 ano a frente;
+     *  - sem sobreposicao de horario para o mesmo profissional nem para o mesmo paciente;
      *  - ONLINE exige consentimento especifico do paciente;
      *  - valor vem do convenio do paciente (se usarConvenio) ou do servico (particular).
      */
@@ -23,6 +27,11 @@ public class AgendaService {
                                Modalidade modalidade, boolean usarConvenio) {
         ctx.exigirSessao();
         if (inicio == null) throw new RegraNegocioException("Informe data e hora.");
+        LocalDate hoje = ctx.hoje();
+        if (inicio.toLocalDate().isBefore(hoje.minusDays(DIAS_RETROATIVOS))
+                || inicio.toLocalDate().isAfter(hoje.plusYears(ANOS_A_FRENTE)))
+            throw new RegraNegocioException("Data fora do periodo permitido (ate " + DIAS_RETROATIVOS
+                    + " dias atras e " + ANOS_A_FRENTE + " ano a frente).");
         Paciente paciente = ctx.pacienteService.buscar(pacienteId);
         if (paciente.isArquivado()) throw new RegraNegocioException("Paciente arquivado. Reative o cadastro antes.");
 
@@ -33,8 +42,7 @@ public class AgendaService {
                 .orElseThrow(() -> new RegraNegocioException("Servico nao encontrado."));
 
         LocalDateTime fim = inicio.plusMinutes(servico.getDuracaoMin());
-        if (ctx.atendimentos.contarConflitos(prof.getId(), inicio, fim, null) > 0)
-            throw new RegraNegocioException("Conflito: " + prof.getNome() + " ja tem atendimento nesse horario.");
+        verificarConflitos(prof.getId(), prof.getNome(), pacienteId, paciente.getNome(), inicio, fim, null);
 
         if (modalidade == Modalidade.ONLINE
                 && !ctx.pacienteService.temConsentimento(pacienteId, TipoConsentimento.ATENDIMENTO_ONLINE))
@@ -63,10 +71,29 @@ public class AgendaService {
         return a;
     }
 
+    /** Segue StatusAtendimento.podeIrPara; a auditoria guarda o status anterior ("STATUS_DE->PARA"). */
     public void alterarStatus(int atendimentoId, StatusAtendimento status) {
         ctx.exigirSessao();
+        if (status == null) throw new RegraNegocioException("Informe o status.");
+        Atendimento a = ctx.atendimentos.buscar(atendimentoId)
+                .orElseThrow(() -> new RegraNegocioException("Atendimento nao encontrado."));
+        StatusAtendimento anterior = a.getStatus();
+        if (!anterior.podeIrPara(status))
+            throw new RegraNegocioException("Nao e possivel mudar de " + anterior + " para " + status + ".");
+        // cancelado nao ocupa horario: o espaco pode ter sido reaproveitado enquanto estava cancelado
+        if (!anterior.ocupaHorario() && status.ocupaHorario())
+            verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), a.getPacienteId(), a.getPacienteNome(),
+                    a.getInicio(), a.getFim(), a.getId());
         ctx.atendimentos.atualizarStatus(atendimentoId, status);
-        ctx.auditar("STATUS_" + status.name(), "atendimento", atendimentoId);
+        ctx.auditar("STATUS_" + anterior.name() + "->" + status.name(), "atendimento", atendimentoId);
+    }
+
+    private void verificarConflitos(int profissionalId, String profissionalNome, int pacienteId, String pacienteNome,
+                                    LocalDateTime inicio, LocalDateTime fim, Integer ignorarId) {
+        if (ctx.atendimentos.contarConflitos(profissionalId, inicio, fim, ignorarId) > 0)
+            throw new RegraNegocioException("Conflito: " + profissionalNome + " ja tem atendimento nesse horario.");
+        if (ctx.atendimentos.contarConflitosPaciente(pacienteId, inicio, fim, ignorarId) > 0)
+            throw new RegraNegocioException("Conflito: " + pacienteNome + " ja tem atendimento nesse horario.");
     }
 
     public void registrarPagamento(int atendimentoId, String forma) {

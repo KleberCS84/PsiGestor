@@ -1,5 +1,6 @@
 package br.com.kleber.psigestor.service;
 
+import br.com.kleber.psigestor.dao.DaoException;
 import br.com.kleber.psigestor.model.*;
 import br.com.kleber.psigestor.util.Criptografia;
 import br.com.kleber.psigestor.util.RegraNegocioException;
@@ -16,8 +17,10 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +36,9 @@ class PsiGestorTest {
     @BeforeEach
     void preparar() {
         ctx = new Contexto("jdbc:sqlite:" + tmp.resolve("teste.db"));
+        // "hoje" fixo: as datas de 2026 usadas nos testes nunca saem da janela de agendamento
+        ZoneId zona = ZoneId.systemDefault();
+        ctx.setRelogio(Clock.fixed(LocalDate.of(2026, 10, 12).atStartOfDay(zona).toInstant(), zona));
         ana = ctx.autenticacao.cadastrar("Ana Souza", "ana", "senhaForte1".toCharArray(),
                 Papel.PSICOLOGO, "09/12345", 30);
         ctx.autenticacao.entrar("ana", "senhaForte1".toCharArray());
@@ -192,6 +198,72 @@ class PsiGestorTest {
         Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
                 LocalDateTime.of(2026, 10, 15, 8, 0), Modalidade.PRESENCIAL, true);
         assertEquals(90, a.getValor());
+    }
+
+    // ---------- A3: maquina de estados do status ----------
+    /** Cenario da revisao: reativar um cancelado nao pode criar dois atendimentos no mesmo horario. */
+    @Test
+    void reativarCanceladoRevalidaConflito() {
+        LocalDateTime t = LocalDateTime.of(2026, 10, 13, 14, 0);
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), t, Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.CANCELADO);
+        Paciente maria = ctx.pacienteService.salvar(new Paciente("Maria", LocalDate.of(1985, 1, 1), null));
+        ctx.agenda.agendar(maria.getId(), ana.getId(), sessao.getId(), t, Modalidade.PRESENCIAL, false);
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.CONFIRMADO));
+    }
+
+    @Test
+    void transicaoInvalidaDeStatusERecusada() {
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 13, 8, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.REALIZADO);
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.AGENDADO));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.REALIZADO));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.alterarStatus(a.getId(), null));
+        assertDoesNotThrow(() -> ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.FALTOU));   // correcao de clique
+    }
+
+    @Test
+    void auditoriaRegistraStatusAnterior() {
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 10, 13, 8, 0), Modalidade.PRESENCIAL, false);
+        ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.REALIZADO);
+        assertTrue(ctx.logs.ultimos(5).stream().anyMatch(l -> l.acao().equals("STATUS_AGENDADO->REALIZADO")));
+    }
+
+    // ---------- A4: update em id inexistente ----------
+    @Test
+    void operacaoEmIdInexistenteFalhaENaoAudita() {
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.registrarPagamento(999, "PIX"));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.marcarReciboEmitido(999));
+        assertTrue(ctx.logs.ultimos(10).stream().noneMatch(l -> l.acao().equals("PAGAMENTO")));
+        Convenio fantasma = new Convenio("Fantasma", null, 90, 30);
+        fantasma.setId(999);
+        assertThrows(RegraNegocioException.class, () -> ctx.convenios.salvar(fantasma));
+    }
+
+    // ---------- M9: datas e conflito por paciente ----------
+    @Test
+    void agendamentoForaDaJanelaERecusado() {
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2062, 10, 13, 14, 0), Modalidade.PRESENCIAL, false));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(),
+                LocalDateTime.of(2026, 8, 1, 14, 0), Modalidade.PRESENCIAL, false));
+    }
+
+    @Test
+    void mesmoPacienteNaoPodeTerHorariosSobrepostos() {
+        Usuario carlos = ctx.autenticacao.cadastrar("Carlos", "carlos", "senhaCarlos1".toCharArray(), Papel.PSICOLOGO, "09/999", 30);
+        LocalDateTime t = LocalDateTime.of(2026, 10, 13, 14, 0);
+        ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), t, Modalidade.PRESENCIAL, false);
+        assertThrows(RegraNegocioException.class, () ->
+                ctx.agenda.agendar(joao.getId(), carlos.getId(), sessao.getId(), t.plusMinutes(30), Modalidade.PRESENCIAL, false));
+    }
+
+    // ---------- convenio: CHECK em prazo_pagamento_dias ----------
+    @Test
+    void prazoDePagamentoNegativoERecusadoPeloBanco() {
+        assertThrows(DaoException.class, () -> ctx.convenios.salvar(new Convenio("Negativo", null, 90, -1)));
     }
 
     // ---------- pacientes ----------

@@ -1,6 +1,7 @@
 package br.com.kleber.psigestor.dao;
 
 import br.com.kleber.psigestor.model.Paciente;
+import br.com.kleber.psigestor.util.RegraNegocioException;
 
 import java.sql.*;
 import java.time.LocalDate;
@@ -36,7 +37,7 @@ public class PacienteDAO {
             ps.setString(9, p.getNumeroCarteirinha());
             ps.setInt(10, p.isArquivado() ? 1 : 0);
             if (!novo) ps.setInt(11, p.getId());
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente nao encontrado.");
             if (novo) p.setId(JdbcUtil.ultimoId(ps));
             return p;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar paciente", e); }
