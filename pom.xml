@@ -38,6 +38,19 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- so versao.properties e filtrado: ${...} em schema.sql/css/termos fica intacto -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes><exclude>versao.properties</exclude></excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes><include>versao.properties</include></includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -60,4 +73,82 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Instalador Windows com Java e JavaFX embutidos: mvn -P instalador clean package
+            Requer JDK 21 (jpackage) e WiX Toolset 3.x no PATH. Passo a passo em docs/BUILD.md.
+        -->
+        <profile>
+            <id>instalador</id>
+            <properties>
+                <jpackage.input>${project.build.directory}/jpackage-input</jpackage.input>
+                <!-- fixo para sempre: e o que faz a versao nova substituir a antiga em vez de instalar ao lado -->
+                <jpackage.upgradeUuid>44c90113-5f21-4401-a9b9-6f1a03b6b93f</jpackage.upgradeUuid>
+            </properties>
+            <build>
+                <plugins>
+                    <!-- o jar do app vai para a mesma pasta das dependencias (entrada do jpackage) -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>3.4.2</version>
+                        <configuration>
+                            <outputDirectory>${jpackage.input}</outputDirectory>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>3.8.1</version>
+                        <executions>
+                            <execution>
+                                <id>copiar-dependencias</id>
+                                <phase>package</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <includeScope>runtime</includeScope>
+                                    <outputDirectory>${jpackage.input}</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>jpackage</id>
+                                <phase>package</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/jpackage</executable>
+                                    <arguments>
+                                        <argument>--type</argument><argument>exe</argument>
+                                        <argument>--name</argument><argument>PsiGestor</argument>
+                                        <argument>--app-version</argument><argument>${project.version}</argument>
+                                        <argument>--vendor</argument><argument>Kleber Souza</argument>
+                                        <argument>--description</argument><argument>Gestao de consultorio de psicologia</argument>
+                                        <argument>--copyright</argument><argument>Licenca MIT</argument>
+                                        <argument>--input</argument><argument>${jpackage.input}</argument>
+                                        <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
+                                        <argument>--main-class</argument><argument>br.com.kleber.psigestor.ui.Launcher</argument>
+                                        <argument>--icon</argument><argument>${project.basedir}/src/packaging/windows/psigestor.ico</argument>
+                                        <argument>--license-file</argument><argument>${project.basedir}/LICENSE</argument>
+                                        <argument>--win-menu</argument>
+                                        <argument>--win-menu-group</argument><argument>PsiGestor</argument>
+                                        <argument>--win-shortcut</argument>
+                                        <argument>--win-dir-chooser</argument>
+                                        <argument>--win-upgrade-uuid</argument><argument>${jpackage.upgradeUuid}</argument>
+                                        <argument>--dest</argument><argument>${project.build.directory}/instalador</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

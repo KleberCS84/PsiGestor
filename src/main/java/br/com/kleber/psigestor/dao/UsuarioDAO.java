@@ -17,8 +17,9 @@ public class UsuarioDAO {
     public Usuario inserir(Usuario u) {
         String sql = """
             INSERT INTO usuario (nome, login, senha_hash, senha_salt, chave_salt, papel, crp,
-                                 percentual_repasse_clinica, ativo, chave_cifrada, chave_iv, iteracoes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""";
+                                 percentual_repasse_clinica, ativo, chave_cifrada, chave_iv, iteracoes,
+                                 dek_recuperacao, salt_recuperacao, iteracoes_recuperacao)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, u.getNome());
             ps.setString(2, u.getLogin());
@@ -32,6 +33,9 @@ public class UsuarioDAO {
             ps.setBytes(10, u.getChaveCifrada());
             ps.setBytes(11, u.getChaveIv());
             ps.setInt(12, u.getIteracoes());
+            ps.setBytes(13, u.getDekRecuperacao());
+            ps.setString(14, u.getSaltRecuperacao());
+            ps.setObject(15, u.getIteracoesRecuperacao());
             ps.executeUpdate();
             u.setId(JdbcUtil.ultimoId(ps));
             return u;
@@ -77,11 +81,14 @@ public class UsuarioDAO {
         return listarPsicologos().size();
     }
 
-    /** Grava senha e embrulho da chave juntos: um unico UPDATE e atomico, nao fica "meio trocado". */
+    /**
+     * Grava senha, embrulho da chave pela senha e embrulho pelo codigo de recuperacao juntos:
+     * um unico UPDATE e atomico, nao fica "meio trocado".
+     */
     public void atualizarCredenciais(Usuario u) {
         String sql = """
             UPDATE usuario SET senha_hash = ?, senha_salt = ?, chave_salt = ?, chave_cifrada = ?, chave_iv = ?,
-                               iteracoes = ?
+                               iteracoes = ?, dek_recuperacao = ?, salt_recuperacao = ?, iteracoes_recuperacao = ?
              WHERE id = ?""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, u.getSenhaHash());
@@ -90,10 +97,24 @@ public class UsuarioDAO {
             ps.setBytes(4, u.getChaveCifrada());
             ps.setBytes(5, u.getChaveIv());
             ps.setInt(6, u.getIteracoes());
-            ps.setInt(7, u.getId());
+            ps.setBytes(7, u.getDekRecuperacao());
+            ps.setString(8, u.getSaltRecuperacao());
+            ps.setObject(9, u.getIteracoesRecuperacao());
+            ps.setInt(10, u.getId());
             // id inexistente: sem isso o service auditaria uma troca de senha que nao aconteceu
             if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar credenciais", e); }
+    }
+
+    /** Aceite dos termos de uso: versao aceita e quando (texto ISO, hora local). */
+    public void registrarAceiteTermos(int id, int versao, String aceitoEm) {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE usuario SET termos_versao = ?, termos_aceitos_em = ? WHERE id = ?")) {
+            ps.setInt(1, versao);
+            ps.setString(2, aceitoEm);
+            ps.setInt(3, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao registrar aceite dos termos", e); }
     }
 
     public Optional<Usuario> buscarPorLogin(String login) {
@@ -140,6 +161,12 @@ public class UsuarioDAO {
         u.setCrp(rs.getString("crp"));
         u.setPercentualRepasseClinica(rs.getDouble("percentual_repasse_clinica"));
         u.setAtivo(rs.getInt("ativo") == 1);
+        u.setDekRecuperacao(rs.getBytes("dek_recuperacao"));
+        u.setSaltRecuperacao(rs.getString("salt_recuperacao"));
+        int it = rs.getInt("iteracoes_recuperacao");
+        u.setIteracoesRecuperacao(rs.wasNull() ? null : it);
+        u.setTermosVersao(rs.getInt("termos_versao"));
+        u.setTermosAceitosEm(rs.getString("termos_aceitos_em"));
         return u;
     }
 }

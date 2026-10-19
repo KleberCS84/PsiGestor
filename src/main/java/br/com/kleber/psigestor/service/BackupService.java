@@ -18,11 +18,13 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
@@ -33,6 +35,8 @@ import java.util.stream.Stream;
  */
 public class BackupService {
     public static final String EXTENSAO = ".psgb";
+    /** Backup mais antigo que isto (ou nenhum) faz o Painel lembrar o psicologo. */
+    public static final Duration INTERVALO_LEMBRETE = Duration.ofDays(7);
     private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     private static final SecureRandom RANDOM = new SecureRandom();
     private final Contexto ctx;
@@ -143,6 +147,22 @@ public class BackupService {
         } finally {
             limpar(senha);
         }
+    }
+
+    /** Ultimo backup gerado (evento BACKUP da trilha); vazio se nunca houve. */
+    public Optional<LocalDateTime> ultimoBackup() {
+        ctx.exigirSessao();
+        return ctx.logs.ultimaDataHora("BACKUP");
+    }
+
+    /**
+     * Painel mostra o lembrete: psicologo logado e nenhum backup ha mais de INTERVALO_LEMBRETE.
+     * Secretaria nao faz backup, entao nao recebe o lembrete.
+     */
+    public boolean precisaLembrete() {
+        Sessao s = ctx.exigirSessao();
+        if (!s.usuario().isPsicologo()) return false;
+        return ultimoBackup().map(u -> u.isBefore(ctx.agoraLocal().minus(INTERVALO_LEMBRETE))).orElse(true);
     }
 
     private Sessao exigirPsicologo(String mensagem) {

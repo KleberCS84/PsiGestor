@@ -14,6 +14,11 @@ public class Usuario {
     private String crp;
     private double percentualRepasseClinica;
     private boolean ativo = true;
+    private byte[] dekRecuperacao;        // IV || DEK cifrada pelo codigo de recuperacao; null = nao gerado
+    private String saltRecuperacao;
+    private Integer iteracoesRecuperacao;
+    private int termosVersao;             // versao dos termos de uso aceita; 0 = nunca aceitou
+    private String termosAceitosEm;
 
     public Usuario() { }
 
@@ -52,6 +57,19 @@ public class Usuario {
     public void setPercentualRepasseClinica(double p) { this.percentualRepasseClinica = p; }
     public boolean isAtivo() { return ativo; }
     public void setAtivo(boolean ativo) { this.ativo = ativo; }
+    public byte[] getDekRecuperacao() { return dekRecuperacao; }
+    public void setDekRecuperacao(byte[] dekRecuperacao) { this.dekRecuperacao = dekRecuperacao; }
+    public String getSaltRecuperacao() { return saltRecuperacao; }
+    public void setSaltRecuperacao(String saltRecuperacao) { this.saltRecuperacao = saltRecuperacao; }
+    public Integer getIteracoesRecuperacao() { return iteracoesRecuperacao; }
+    public void setIteracoesRecuperacao(Integer iteracoesRecuperacao) { this.iteracoesRecuperacao = iteracoesRecuperacao; }
+    public int getTermosVersao() { return termosVersao; }
+    public void setTermosVersao(int termosVersao) { this.termosVersao = termosVersao; }
+    public String getTermosAceitosEm() { return termosAceitosEm; }
+    public void setTermosAceitosEm(String termosAceitosEm) { this.termosAceitosEm = termosAceitosEm; }
+    public boolean temRecuperacao() {
+        return dekRecuperacao != null && saltRecuperacao != null && iteracoesRecuperacao != null;
+    }
 
     @Override public String toString() {
         return crp == null || crp.isBlank() ? nome : nome + " (CRP " + crp + ")";

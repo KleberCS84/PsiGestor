@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.function.Supplier;
 
 /**
@@ -81,6 +82,9 @@ public class Contexto implements AutoCloseable {
     /** Instante atual pelo relogio do contexto (bloqueio de login e inatividade). */
     Instant agora() { return relogio.instant(); }
 
+    /** Data/hora local pelo relogio do contexto (comparada com log_acesso.data_hora, que e hora local). */
+    LocalDateTime agoraLocal() { return LocalDateTime.now(relogio); }
+
     /** Somente para testes automatizados (datas fixas nao "vencem" com o passar do tempo). */
     void setRelogio(Clock relogio) { this.relogio = relogio; }
 
@@ -136,7 +140,11 @@ public class Contexto implements AutoCloseable {
 
     /** Registra na trilha de auditoria em nome do usuario logado. */
     void auditar(String acao, String entidade, Integer entidadeId) {
-        logs.registrar(sessao == null ? null : sessao.usuario().getId(), acao, entidade, entidadeId);
+        auditar(acao, entidade, entidadeId, null);
+    }
+
+    void auditar(String acao, String entidade, Integer entidadeId, String detalhe) {
+        logs.registrar(sessao == null ? null : sessao.usuario().getId(), acao, entidade, entidadeId, detalhe);
     }
 
     public void sair() {

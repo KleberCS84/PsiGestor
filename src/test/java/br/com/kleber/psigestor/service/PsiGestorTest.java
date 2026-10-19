@@ -2,7 +2,10 @@ package br.com.kleber.psigestor.service;
 
 import br.com.kleber.psigestor.dao.DaoException;
 import br.com.kleber.psigestor.model.*;
+import br.com.kleber.psigestor.util.CodigoRecuperacao;
 import br.com.kleber.psigestor.util.Criptografia;
+import br.com.kleber.psigestor.util.Database;
+import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Validadores;
 import org.junit.jupiter.api.BeforeEach;
@@ -853,6 +856,7 @@ class PsiGestorTest {
 
     // ---------- revisao final: M-6, M-5, M-4, M-3 ----------
     private String urlTeste() { return "jdbc:sqlite:" + tmp.resolve("teste.db"); }
+    private static final String PRE_MIGRACAO = "teste.db.pre-v" + Database.VERSAO_ESQUEMA;
 
     private int userVersion(Path banco) throws SQLException {
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + banco);
@@ -871,23 +875,23 @@ class PsiGestorTest {
             st.execute("UPDATE atendimento SET percentual_repasse_clinica = NULL");   // como era na v5
             st.execute("PRAGMA user_version = 5");
         }
-        Path copia = tmp.resolve("teste.db.pre-v6");
+        Path copia = tmp.resolve(PRE_MIGRACAO);
         assertFalse(Files.exists(copia));
 
         ctx = new Contexto(urlTeste());
         assertTrue(Files.exists(copia));
         assertEquals(5, userVersion(copia));                       // estado de antes da migracao
-        assertEquals(6, userVersion(tmp.resolve("teste.db")));
+        assertEquals(Database.VERSAO_ESQUEMA, userVersion(tmp.resolve("teste.db")));
         assertEquals(30.0, ctx.atendimentos.buscar(a.getId()).orElseThrow().getPercentualRepasseClinica());
     }
 
     /** M-6: banco novo (sem usuario) e banco ja atual nao geram copia. */
     @Test
     void bancoNovoOuAtualNaoGeraCopia() {
-        assertFalse(Files.exists(tmp.resolve("teste.db.pre-v6")));   // o do @BeforeEach nasceu v6
+        assertFalse(Files.exists(tmp.resolve(PRE_MIGRACAO)));   // o do @BeforeEach nasceu na versao atual
         ctx.close();
-        ctx = new Contexto(urlTeste());                               // reabrir v6
-        assertFalse(Files.exists(tmp.resolve("teste.db.pre-v6")));
+        ctx = new Contexto(urlTeste());                          // reabrir ja atual
+        assertFalse(Files.exists(tmp.resolve(PRE_MIGRACAO)));
     }
 
     /** M-6: migracao que falha nao altera o banco e a copia fica para recuperacao. */
@@ -904,7 +908,7 @@ class PsiGestorTest {
         }
         assertThrows(IllegalStateException.class, () -> new Contexto(urlTeste()));
         assertEquals(5, userVersion(tmp.resolve("teste.db")));      // rollback: nada mudou
-        assertTrue(Files.exists(tmp.resolve("teste.db.pre-v6")));
+        assertTrue(Files.exists(tmp.resolve(PRE_MIGRACAO)));
     }
 
     /** M-5: mudar o % depois nao reescreve o repasse de sessoes ja realizadas. */
@@ -1308,5 +1312,207 @@ class PsiGestorTest {
         @Override public ZoneId getZone() { return zona; }
         @Override public Clock withZone(ZoneId z) { return new RelogioAjustavel(agora, z); }
         @Override public Instant instant() { return agora; }
+    }
+
+    // ---------- codigo de recuperacao ----------
+    private static final String NOVA = "senhaNova1234";
+
+    private String gerarCodigoDaAna() {
+        return ctx.autenticacao.gerarCodigoRecuperacao("senhaForte12".toCharArray());
+    }
+
+    private String recuperar(String login, String codigo, String novaSenha) {
+        return ctx.autenticacao.recuperarAcesso(login, codigo, novaSenha.toCharArray());
+    }
+
+    private boolean logTem(String acao) {
+        return ctx.logs.ultimos(50).stream().anyMatch(l -> l.acao().equals(acao));
+    }
+
+    /** (1) Codigo certo: senha nova vale e o prontuario gravado antes continua legivel (mesma DEK). */
+    @Test
+    void recuperarComCodigoCertoPermiteEntrarELerProntuarioAntigo() {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro antes de esquecer a senha");
+        String codigo = gerarCodigoDaAna();
+        assertTrue(logTem("RECUPERACAO_GERADA"));
+        ctx.sair();
+
+        String novo = recuperar("ana", codigo, NOVA);
+        assertNotEquals(codigo, novo);
+        assertTrue(logTem("RECUPERACAO_USADA"));
+        assertNull(ctx.getSessao());                               // recuperar nao abre sessao
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
+        ctx.autenticacao.entrar("ana", NOVA.toCharArray());
+        assertEquals("Registro antes de esquecer a senha", ctx.prontuario.listar(joao.getId()).get(0).texto());
+    }
+
+    /** (2) Codigo errado (formato valido) nao muda senha, embrulhos nem codigo; a senha antiga continua valendo. */
+    @Test
+    void codigoDeRecuperacaoErradoNaoAlteraNada() {
+        gerarCodigoDaAna();
+        Usuario antes = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        ctx.sair();
+
+        RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                () -> recuperar("ana", CodigoRecuperacao.gerar(), NOVA));
+        assertEquals("Login ou codigo de recuperacao invalidos.", e.getMessage());
+        Usuario depois = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
+        assertEquals(antes.getSenhaHash(), depois.getSenhaHash());
+        assertArrayEquals(antes.getChaveCifrada(), depois.getChaveCifrada());
+        assertArrayEquals(antes.getDekRecuperacao(), depois.getDekRecuperacao());
+        assertEquals(antes.getSaltRecuperacao(), depois.getSaltRecuperacao());
+        assertTrue(logTem("RECUPERACAO_FALHOU"));
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
+    }
+
+    /** (3) O codigo usado deixa de valer; o novo funciona. Gerar outro codigo tambem invalida o anterior. */
+    @Test
+    void depoisDeRecuperarOCodigoAntigoNaoValeMais() {
+        String codigo = gerarCodigoDaAna();
+        ctx.sair();
+        String novo = recuperar("ana", codigo, NOVA);
+        assertThrows(RegraNegocioException.class, () -> recuperar("ana", codigo, "outraSenha5678"));
+        recuperar("ana", novo, "outraSenha5678");
+        ctx.autenticacao.entrar("ana", "outraSenha5678".toCharArray());
+
+        String primeiro = ctx.autenticacao.gerarCodigoRecuperacao("outraSenha5678".toCharArray());
+        String segundo = ctx.autenticacao.gerarCodigoRecuperacao("outraSenha5678".toCharArray());
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> recuperar("ana", primeiro, NOVA));
+        assertDoesNotThrow(() -> recuperar("ana", segundo, NOVA));
+    }
+
+    /** (4) Banco v6 (sem as colunas): migra, o psicologo entra e le o prontuario; a tela oferece gerar o codigo. */
+    @Test
+    void usuarioMigradoSemCodigoContinuaEntrando() throws SQLException {
+        ctx.prontuario.registrar(joao.getId(), null, "Registro da v6");
+        ctx.close();
+        try (Connection con = DriverManager.getConnection(urlTeste()); Statement st = con.createStatement()) {
+            st.execute("ALTER TABLE usuario DROP COLUMN dek_recuperacao");
+            st.execute("ALTER TABLE usuario DROP COLUMN salt_recuperacao");
+            st.execute("ALTER TABLE usuario DROP COLUMN iteracoes_recuperacao");
+            st.execute("PRAGMA user_version = 6");
+        }
+        ctx = new Contexto(urlTeste());
+        assertEquals(Database.VERSAO_ESQUEMA, userVersion(tmp.resolve("teste.db")));
+        assertFalse(ctx.usuarios.buscarPorLogin("ana").orElseThrow().temRecuperacao());
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        assertEquals("Registro da v6", ctx.prontuario.listar(joao.getId()).get(0).texto());
+        assertTrue(ctx.autenticacao.precisaCodigoRecuperacao());
+        gerarCodigoDaAna();
+        assertFalse(ctx.autenticacao.precisaCodigoRecuperacao());
+    }
+
+    /** (5) Nem log_acesso nem o log tecnico (mesmo com a pilha das excecoes) contem o codigo. */
+    @Test
+    void codigoDeRecuperacaoNuncaApareceEmLog() throws Exception {
+        Path pastaLogs = tmp.resolve("logs");
+        LogTecnico.iniciar(pastaLogs);
+        List<String> codigos = new java.util.ArrayList<>();
+        try {
+            String c1 = gerarCodigoDaAna();
+            codigos.add(c1);
+            ctx.sair();
+            String errado = CodigoRecuperacao.gerar();
+            codigos.add(errado);
+            LogTecnico.erro("teste codigo errado",
+                    assertThrows(RegraNegocioException.class, () -> recuperar("ana", errado, NOVA)));
+            char ultimo = c1.charAt(c1.length() - 1);
+            String digitadoErrado = c1.substring(0, c1.length() - 1) + (ultimo == '0' ? '1' : '0');
+            codigos.add(digitadoErrado);
+            LogTecnico.erro("teste digitado errado",
+                    assertThrows(RegraNegocioException.class, () -> recuperar("ana", digitadoErrado, NOVA)));
+            codigos.add(recuperar("ana", c1, NOVA));
+        } finally {
+            LogTecnico.encerrar();
+        }
+
+        StringBuilder trilha = new StringBuilder();
+        try (Statement st = ctx.getConexaoParaTeste().createStatement(); ResultSet rs = st.executeQuery("SELECT * FROM log_acesso")) {
+            int n = rs.getMetaData().getColumnCount();
+            while (rs.next()) for (int i = 1; i <= n; i++) trilha.append(rs.getString(i)).append('|');
+        }
+        StringBuilder tecnico = new StringBuilder();
+        try (var arquivos = Files.list(pastaLogs)) {
+            for (Path p : arquivos.toList()) tecnico.append(Files.readString(p));
+        }
+        assertTrue(trilha.toString().contains("RECUPERACAO_FALHOU"));
+        assertTrue(tecnico.toString().contains("teste codigo errado"));
+        for (String c : codigos) {
+            for (String forma : List.of(c, c.replace("-", ""), c.substring(0, 4) + "-" + c.substring(5, 9))) {
+                assertFalse(trilha.toString().contains(forma), "log_acesso contem o codigo");
+                assertFalse(tecnico.toString().contains(forma), "log tecnico contem o codigo");
+            }
+        }
+    }
+
+    /** O codigo usa o mesmo bloqueio do login: errar o codigo bloqueia ate a senha certa. */
+    @Test
+    void tentativasDeCodigoContamNoBloqueioDoLogin() {
+        gerarCodigoDaAna();
+        ctx.sair();
+        for (int i = 0; i < AutenticacaoService.FALHAS_ATE_BLOQUEIO; i++)
+            assertThrows(RegraNegocioException.class, () -> recuperar("ana", CodigoRecuperacao.gerar(), NOVA));
+        RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                () -> ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray()));
+        assertTrue(e.getMessage().startsWith("Muitas tentativas"), e.getMessage());
+    }
+
+    /** Erro de digitacao (verificador) nao gasta tentativa nem vira RECUPERACAO_FALHOU. */
+    @Test
+    void codigoDigitadoErradoNaoContaTentativa() {
+        String c = gerarCodigoDaAna();
+        ctx.sair();
+        String trocado = c.substring(0, 2) + c.charAt(3) + c.charAt(2) + c.substring(4);
+        if (trocado.equals(c)) trocado = c.substring(0, c.length() - 1) + (c.endsWith("0") ? "1" : "0");
+        String t = trocado;
+        RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> recuperar("ana", t, NOVA));
+        assertEquals(CodigoRecuperacao.DIGITADO_ERRADO, e.getMessage());
+        assertFalse(logTem("RECUPERACAO_FALHOU"));
+    }
+
+    /** Secretaria e login inexistente recebem a mesma resposta do codigo errado (sem enumeracao). */
+    @Test
+    void secretariaELoginInexistenteRecebemAMesmaResposta() {
+        ctx.autenticacao.cadastrar("Bia Lima", "bia", "senhaDaBia123".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.sair();
+        for (String login : List.of("bia", "ninguem")) {
+            RegraNegocioException e = assertThrows(RegraNegocioException.class,
+                    () -> recuperar(login, CodigoRecuperacao.gerar(), NOVA));
+            assertEquals("Login ou codigo de recuperacao invalidos.", e.getMessage());
+        }
+        assertDoesNotThrow(() -> ctx.autenticacao.entrar("bia", "senhaDaBia123".toCharArray()));
+    }
+
+    /** Secretaria nao tem codigo: um psicologo redefine a senha dela. Psicologo nunca e redefinido assim. */
+    @Test
+    void psicologoRedefineSenhaDaSecretaria() {
+        Usuario bia = ctx.autenticacao.cadastrar("Bia Lima", "bia", "senhaDaBia123".toCharArray(),
+                Papel.SECRETARIA, null, 0);
+        Usuario carlos = ctx.autenticacao.cadastrar("Carlos Dias", "carlos", "senhaCarlos12".toCharArray(),
+                Papel.PSICOLOGO, "09/54321", 0);
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.autenticacao.redefinirSenhaSecretaria(bia.getId(), "curta".toCharArray()));
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.autenticacao.redefinirSenhaSecretaria(carlos.getId(), "senhaInvasora1".toCharArray()));
+        ctx.autenticacao.redefinirSenhaSecretaria(bia.getId(), "senhaNovaBia12".toCharArray());
+        assertTrue(logTem("REDEFINICAO_SENHA"));
+        ctx.sair();
+
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.entrar("bia", "senhaDaBia123".toCharArray()));
+        ctx.autenticacao.entrar("bia", "senhaNovaBia12".toCharArray());
+        assertThrows(RegraNegocioException.class,       // secretaria nao redefine ninguem
+                () -> ctx.autenticacao.redefinirSenhaSecretaria(bia.getId(), "outraSenha1234".toCharArray()));
+        assertThrows(RegraNegocioException.class, () -> gerarCodigoDaAna());   // nem gera codigo
+    }
+
+    /** Gerar codigo exige a senha atual: sessao aberta e desacompanhada nao basta. */
+    @Test
+    void gerarCodigoExigeSenhaAtual() {
+        assertThrows(RegraNegocioException.class,
+                () -> ctx.autenticacao.gerarCodigoRecuperacao("chuteErrado1".toCharArray()));
+        assertFalse(ctx.usuarios.buscarPorLogin("ana").orElseThrow().temRecuperacao());
+        assertTrue(logTem("RECUPERACAO_FALHOU"));
     }
 }

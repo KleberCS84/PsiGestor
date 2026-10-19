@@ -18,7 +18,12 @@ CREATE TABLE IF NOT EXISTS usuario (
     ativo           INTEGER NOT NULL DEFAULT 1,
     chave_cifrada   BLOB,                     -- chave do prontuario (DEK) cifrada pela KEK; so psicologo
     chave_iv        BLOB,
-    iteracoes       INTEGER NOT NULL DEFAULT 210000  -- PBKDF2 da senha e da KEK; menor que o atual = migra no login
+    iteracoes       INTEGER NOT NULL DEFAULT 210000, -- PBKDF2 da senha e da KEK; menor que o atual = migra no login
+    dek_recuperacao BLOB,                     -- IV || DEK cifrada pela KEK do codigo de recuperacao; so psicologo
+    salt_recuperacao TEXT,                    -- nulos = codigo de recuperacao ainda nao gerado
+    iteracoes_recuperacao INTEGER,
+    termos_versao   INTEGER NOT NULL DEFAULT 0, -- versao dos termos de uso aceita; 0 = nunca aceitou
+    termos_aceitos_em TEXT                    -- yyyy-MM-ddTHH:mm:ss (hora local) do aceite
 );
 
 CREATE TABLE IF NOT EXISTS convenio (

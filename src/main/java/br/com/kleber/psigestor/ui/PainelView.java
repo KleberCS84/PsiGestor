@@ -5,9 +5,13 @@ import br.com.kleber.psigestor.model.StatusAtendimento;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.service.FinanceiroService;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableView;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import java.time.LocalDate;
@@ -22,9 +26,33 @@ public class PainelView {
     public Node criar() {
         LocalDate hoje = LocalDate.now();
         VBox tela = Ui.tela(Ui.titulo("Resumo de hoje"), new Label(hoje.format(Ui.DATA)));
+        Ui.executar(() -> lembrarBackup(tela));
         if (!Ui.executar(() -> preencher(tela, hoje)))
             tela.getChildren().add(Ui.aviso("Nao foi possivel carregar o resumo. Abra o Painel novamente."));
         return tela;
+    }
+
+    /** Backup e responsabilidade do usuario (termos de uso): lembra no topo do Painel ate ele fazer. */
+    private void lembrarBackup(VBox tela) {
+        if (!ctx.backup.precisaLembrete()) return;
+        String quando = ctx.backup.ultimoBackup()
+                .map(d -> "O ultimo backup foi em " + d.format(Ui.DATA) + ".")
+                .orElse("Nenhum backup foi feito ainda.");
+        Label texto = new Label(quando + " Sem backup, defeito no disco ou perda do computador apaga os dados"
+                + " dos pacientes de forma definitiva.");
+        texto.setWrapText(true);
+        texto.setMinHeight(Region.USE_PREF_SIZE);
+        HBox.setHgrow(texto, Priority.ALWAYS);
+        Button fazer = new Button("Fazer backup agora");
+        fazer.getStyleClass().add("primario");
+        fazer.setMinWidth(Region.USE_PREF_SIZE);
+        HBox banner = Ui.linha(texto, fazer);
+        banner.getStyleClass().add("aviso");
+        fazer.setOnAction(e -> {
+            if (PrivacidadeView.fazerBackup(ctx, banner.getScene().getWindow()))
+                tela.getChildren().remove(banner);
+        });
+        tela.getChildren().add(banner);
     }
 
     private void preencher(VBox tela, LocalDate hoje) {

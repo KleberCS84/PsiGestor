@@ -1,5 +1,7 @@
 package br.com.kleber.psigestor.ui;
 
+import br.com.kleber.psigestor.util.Database;
+import br.com.kleber.psigestor.util.Versao;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -19,12 +21,21 @@ class AvisosTest {
         assertTrue(aviso.contains("anonimizados"));
     }
 
+    /** Tela Sobre: a versao vem do pom.xml (versao.properties filtrado pelo Maven), nao do literal. */
+    @Test
+    void versaoVemDoPom() {
+        String v = Versao.atual();
+        assertNotEquals(Versao.DESCONHECIDA, v);
+        assertFalse(v.contains("${"), v);
+        assertTrue(v.matches("\\d+\\.\\d+\\.\\d+.*"), v);   // jpackage exige versao numerica
+    }
+
     /** M-6: a falha na partida diz onde esta a copia de antes da migracao e onde esta o detalhe tecnico. */
     @Test
     void mensagemDeFalhaNaPartidaApontaCopiaELogs() {
         Path pasta = Path.of("C:", "Users", "fulano", "PsiGestor");
         String msg = PsiGestorApp.mensagemFalhaAoAbrir(pasta);
-        assertTrue(msg.contains(pasta.resolve("psigestor.db.pre-v6").toString()), msg);
+        assertTrue(msg.contains(pasta.resolve("psigestor.db.pre-v" + Database.VERSAO_ESQUEMA).toString()), msg);
         assertTrue(msg.contains(pasta.resolve("logs").toString()), msg);
         assertTrue(msg.contains("Nenhum dado foi apagado"), msg);
         assertTrue(msg.contains("versao mais antiga"), msg);

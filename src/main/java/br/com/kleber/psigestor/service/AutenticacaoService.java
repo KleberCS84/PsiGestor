@@ -3,14 +3,17 @@ package br.com.kleber.psigestor.service;
 import br.com.kleber.psigestor.model.LogAcesso;
 import br.com.kleber.psigestor.model.Papel;
 import br.com.kleber.psigestor.model.Usuario;
+import br.com.kleber.psigestor.util.CodigoRecuperacao;
 import br.com.kleber.psigestor.util.Criptografia;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Sessao;
+import br.com.kleber.psigestor.util.Termos;
 import br.com.kleber.psigestor.util.Validadores;
 
 import javax.crypto.SecretKey;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +31,8 @@ public class AutenticacaoService {
     static final int DETALHE_MAXIMO = 40;
     /** Salt descartavel para o PBKDF2 de login inexistente/inativo (B5). Nunca gravado. */
     private static final String SALT_FICTICIO = Criptografia.novoSalt();
+    /** usuario.dek_recuperacao = IV do GCM (12 bytes) || DEK cifrada. */
+    private static final int IV_RECUPERACAO = 12;
 
     private final Contexto ctx;
     /** Por login digitado (existente ou nao). Em memoria: reabrir o app zera, aceitavel em desktop. */
@@ -215,6 +220,179 @@ public class AutenticacaoService {
         } finally {
             if (senhaAtual != null) Arrays.fill(senhaAtual, '\0');
             if (novaSenha != null) Arrays.fill(novaSenha, '\0');
+        }
+    }
+
+    /** Usuario logado ainda nao aceitou a versao atual dos termos de uso (a tela nao deixa seguir sem aceite). */
+    public boolean precisaAceitarTermos() { return precisaAceitarTermos(Termos.VERSAO_ATUAL); }
+
+    /** Com a versao como parametro, o teste simula termos novos sem criar outro arquivo. */
+    boolean precisaAceitarTermos(int versaoAtual) {
+        Sessao s = ctx.exigirSessao();
+        return ctx.usuarios.buscar(s.usuario().getId()).map(u -> u.getTermosVersao() < versaoAtual).orElse(true);
+    }
+
+    /** Registra o aceite da versao atual (versao + data/hora) e a trilha TERMOS_ACEITOS, juntos. */
+    public void aceitarTermos() {
+        Sessao s = ctx.exigirSessao();
+        int id = s.usuario().getId();
+        String quando = ctx.agoraLocal().truncatedTo(ChronoUnit.SECONDS).toString();
+        ctx.transacao(() -> {
+            ctx.usuarios.registrarAceiteTermos(id, Termos.VERSAO_ATUAL, quando);
+            ctx.auditar("TERMOS_ACEITOS", "usuario", id, "v" + Termos.VERSAO_ATUAL);
+        });
+    }
+
+    /** Psicologo logado que ainda nao tem codigo de recuperacao (a tela oferece a cada login ate gerar). */
+    public boolean precisaCodigoRecuperacao() {
+        Sessao s = ctx.exigirSessao();
+        if (!s.usuario().isPsicologo()) return false;
+        return ctx.usuarios.buscar(s.usuario().getId()).map(u -> !u.temRecuperacao()).orElse(false);
+    }
+
+    /**
+     * Gera um codigo de recuperacao novo para o psicologo logado; o anterior deixa de valer.
+     * Pede a senha atual: uma sessao aberta e desacompanhada nao basta para obter acesso permanente.
+     * Devolve o codigo formatado, para ser mostrado uma unica vez; ele nao e gravado em lugar nenhum.
+     */
+    public String gerarCodigoRecuperacao(char[] senhaAtual) {
+        try {
+            Sessao s = ctx.exigirSessao();
+            if (!s.usuario().isPsicologo() || s.chaveProntuario() == null)
+                throw new RegraNegocioException("Somente psicologos tem codigo de recuperacao.");
+            Usuario u = ctx.usuarios.buscar(s.usuario().getId()).orElseThrow();
+            if (senhaAtual == null
+                    || !Criptografia.senhaConfere(senhaAtual, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
+                ctx.auditar("RECUPERACAO_FALHOU", "usuario", u.getId());
+                throw new RegraNegocioException("A senha atual nao confere.");
+            }
+            String codigo = CodigoRecuperacao.gerar();
+            embrulharRecuperacao(u, s.chaveProntuario(), codigo);
+            ctx.transacao(() -> {
+                ctx.usuarios.atualizarCredenciais(u);
+                ctx.auditar("RECUPERACAO_GERADA", "usuario", u.getId());
+            });
+            return codigo;
+        } finally {
+            if (senhaAtual != null) Arrays.fill(senhaAtual, '\0');
+        }
+    }
+
+    /**
+     * "Esqueci a senha" do psicologo: o codigo de recuperacao abre a DEK, que e embrulhada pela senha nova;
+     * um codigo NOVO substitui o usado. Tudo em uma transacao. Usa o mesmo bloqueio progressivo do login
+     * (mesma chave), entao alternar tentativas de senha e de codigo nao escapa dele. Nao abre sessao.
+     * Devolve o novo codigo, para ser mostrado uma unica vez.
+     */
+    public String recuperarAcesso(String login, String codigo, char[] novaSenha) {
+        char[] normalizado = null;
+        try {
+            if (novaSenha == null || novaSenha.length < SENHA_MINIMA)
+                throw new RegraNegocioException("A nova senha deve ter pelo menos " + SENHA_MINIMA + " caracteres.");
+            // erro de digitacao (verificador): nao gasta tentativa nem PBKDF2
+            normalizado = CodigoRecuperacao.normalizar(codigo);
+            String loginLimpo = login == null ? "" : login.trim();
+            String chaveTentativa = loginLimpo.toLowerCase(Locale.ROOT);
+            Usuario cadastrado = ctx.usuarios.buscarPorLogin(loginLimpo).orElse(null);
+            String detalhe = cadastrado == null ? "login inexistente" : limitar("login=" + cadastrado.getLogin());
+            // secretaria nao tem DEK nem codigo: mesma resposta de login inexistente
+            Usuario u = cadastrado != null && cadastrado.isAtivo() && cadastrado.isPsicologo()
+                    && cadastrado.temRecuperacao() ? cadastrado : null;
+            Integer uid = cadastrado != null && cadastrado.isAtivo() ? cadastrado.getId() : null;
+
+            Tentativas t = tentativas.get(chaveTentativa);
+            Instant agora = ctx.agora();
+            if (t != null && t.bloqueadoAte != null && agora.isBefore(t.bloqueadoAte)) {
+                ctx.logs.registrar(uid, "LOGIN_BLOQUEADO", "usuario", null, detalhe);
+                long seg = Math.max(1, Duration.between(agora, t.bloqueadoAte).toSeconds());
+                throw new RegraNegocioException("Muitas tentativas. Tente novamente em " + seg + " s.");
+            }
+            SecretKey dek = null;
+            if (u == null) {
+                Criptografia.derivarChave(normalizado, SALT_FICTICIO, Criptografia.ITERACOES_ATUAL);   // mesmo custo
+            } else {
+                dek = abrirPorCodigo(u, normalizado);
+            }
+            if (dek == null) {
+                registrarFalha(chaveTentativa, agora);
+                ctx.logs.registrar(uid, "RECUPERACAO_FALHOU", "usuario", null, detalhe);
+                throw new RegraNegocioException("Login ou codigo de recuperacao invalidos.");
+            }
+            tentativas.remove(chaveTentativa);
+
+            u.setIteracoes(Criptografia.ITERACOES_ATUAL);
+            u.setSenhaSalt(Criptografia.novoSalt());
+            u.setSenhaHash(Criptografia.hashSenha(novaSenha, u.getSenhaSalt(), u.getIteracoes()));
+            embrulhar(u, dek, novaSenha);
+            String novoCodigo = CodigoRecuperacao.gerar();
+            embrulharRecuperacao(u, dek, novoCodigo);
+            ctx.transacao(() -> {
+                ctx.usuarios.atualizarCredenciais(u);
+                ctx.logs.registrar(u.getId(), "RECUPERACAO_USADA", "usuario", u.getId());
+                ctx.logs.registrar(u.getId(), "RECUPERACAO_GERADA", "usuario", u.getId());
+            });
+            return novoCodigo;
+        } finally {
+            if (normalizado != null) Arrays.fill(normalizado, '\0');
+            if (novaSenha != null) Arrays.fill(novaSenha, '\0');
+        }
+    }
+
+    /**
+     * Secretaria nao tem chave de prontuario: se esquecer a senha, um psicologo define uma nova.
+     * Psicologo nunca e redefinido assim (perderia a DEK); ele usa o codigo de recuperacao.
+     */
+    public void redefinirSenhaSecretaria(int usuarioId, char[] novaSenha) {
+        try {
+            Sessao s = ctx.exigirSessao();
+            if (!s.usuario().isPsicologo())
+                throw new RegraNegocioException("Somente psicologos podem redefinir senhas.");
+            Usuario alvo = ctx.usuarios.buscar(usuarioId)
+                    .orElseThrow(() -> new RegraNegocioException("Usuario nao encontrado."));
+            if (alvo.isPsicologo())
+                throw new RegraNegocioException("A senha de psicologo nao pode ser redefinida por outra pessoa: "
+                        + "ele usa o proprio codigo de recuperacao.");
+            if (novaSenha == null || novaSenha.length < SENHA_MINIMA)
+                throw new RegraNegocioException("A nova senha deve ter pelo menos " + SENHA_MINIMA + " caracteres.");
+            alvo.setIteracoes(Criptografia.ITERACOES_ATUAL);
+            alvo.setSenhaSalt(Criptografia.novoSalt());
+            alvo.setSenhaHash(Criptografia.hashSenha(novaSenha, alvo.getSenhaSalt(), alvo.getIteracoes()));
+            ctx.transacao(() -> {
+                ctx.usuarios.atualizarCredenciais(alvo);
+                ctx.auditar("REDEFINICAO_SENHA", "usuario", usuarioId);
+            });
+        } finally {
+            if (novaSenha != null) Arrays.fill(novaSenha, '\0');
+        }
+    }
+
+    /** DEK pelo codigo de recuperacao, ou null se o codigo nao abre (tag GCM invalida). */
+    private static SecretKey abrirPorCodigo(Usuario u, char[] codigo) {
+        byte[] pacote = u.getDekRecuperacao();
+        if (pacote.length <= IV_RECUPERACAO) return null;
+        SecretKey kek = Criptografia.derivarChave(codigo, u.getSaltRecuperacao(), u.getIteracoesRecuperacao());
+        try {
+            return Criptografia.desembrulharChave(Arrays.copyOfRange(pacote, IV_RECUPERACAO, pacote.length),
+                    Arrays.copyOf(pacote, IV_RECUPERACAO), kek);
+        } catch (RegraNegocioException e) {
+            return null;
+        }
+    }
+
+    /** Segundo embrulho da mesma DEK, pela KEK derivada do codigo (salt e iteracoes proprios). Grava IV || cifrada. */
+    private static void embrulharRecuperacao(Usuario u, SecretKey dek, String codigo) {
+        char[] c = CodigoRecuperacao.normalizar(codigo);
+        try {
+            u.setSaltRecuperacao(Criptografia.novoSalt());
+            u.setIteracoesRecuperacao(Criptografia.ITERACOES_ATUAL);
+            SecretKey kek = Criptografia.derivarChave(c, u.getSaltRecuperacao(), u.getIteracoesRecuperacao());
+            byte[][] ivECifrada = Criptografia.embrulharChave(dek, kek);
+            byte[] pacote = new byte[ivECifrada[0].length + ivECifrada[1].length];
+            System.arraycopy(ivECifrada[0], 0, pacote, 0, ivECifrada[0].length);
+            System.arraycopy(ivECifrada[1], 0, pacote, ivECifrada[0].length, ivECifrada[1].length);
+            u.setDekRecuperacao(pacote);
+        } finally {
+            Arrays.fill(c, '\0');
         }
     }
 

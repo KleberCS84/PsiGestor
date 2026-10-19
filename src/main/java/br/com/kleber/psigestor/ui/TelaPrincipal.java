@@ -51,11 +51,15 @@ public class TelaPrincipal {
         trocarSenha.setMaxWidth(Double.MAX_VALUE);
         trocarSenha.setOnAction(e -> new TrocaSenhaDialog(ctx).mostrar());
         VBox.setMargin(trocarSenha, new Insets(20, 0, 0, 0));
+        Button sobre = new Button("Sobre");
+        sobre.getStyleClass().add("menu-item");
+        sobre.setMaxWidth(Double.MAX_VALUE);
+        sobre.setOnAction(e -> SobreDialog.mostrar());
         Button sair = new Button("Sair");
         sair.getStyleClass().add("menu-sair");
         sair.setMaxWidth(Double.MAX_VALUE);
         sair.setOnAction(e -> aoSair.run());
-        menu.getChildren().addAll(trocarSenha, sair);
+        menu.getChildren().addAll(trocarSenha, sobre, sair);
 
         raiz.setLeft(menu);
         botoes.get(0).fire();

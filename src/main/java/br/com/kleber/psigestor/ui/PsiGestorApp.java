@@ -4,6 +4,7 @@ import br.com.kleber.psigestor.service.BackupService;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.LogTecnico;
+import br.com.kleber.psigestor.util.Versao;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -49,7 +50,7 @@ public class PsiGestorApp extends Application {
             return;
         }
         palco = stage;
-        stage.setTitle("PsiGestor - consultorio de psicologia");
+        stage.setTitle("PsiGestor " + Versao.atual() + " - consultorio de psicologia");
         stage.setMinWidth(1000);
         stage.setMinHeight(650);
         mostrarLogin();

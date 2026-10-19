@@ -52,8 +52,13 @@ public class EquipeView {
                 Ui.executar(() -> ctx.autenticacao.reativar(u.getId()));
             carregar();
         }));
+        // secretaria nao tem chave de prontuario: a senha dela pode ser definida por um psicologo
+        Button redefinir = new Button("Redefinir senha (secretaria)");
+        redefinir.setDisable(!psicologo);
+        redefinir.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::redefinirSenha));
         carregar();
-        return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela, Ui.linha(novo, repasse, desativar, reativar),
+        return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela,
+                Ui.linha(novo, repasse, desativar, reativar, redefinir),
                 Ui.aviso("Cada psicologo tem login proprio e so le os proprios registros de prontuario. "
                         + "A secretaria agenda e cuida do financeiro, mas nao acessa o prontuario. "
                         + "Contratos de repasse/sublocacao de sala devem estar formalizados por escrito."));
@@ -63,6 +68,37 @@ public class EquipeView {
      * Psicologo desativado leva junto a unica chave que abre os registros dele: so prossegue se o
      * login for digitado. Secretaria nao tem prontuario, basta a confirmacao simples.
      */
+    private void redefinirSenha(Usuario u) {
+        if (u.isPsicologo()) {
+            Ui.erro("Psicologo redefine a propria senha com o codigo de recuperacao (\"Esqueci a senha\" no login).");
+            return;
+        }
+        PasswordField nova = new PasswordField();
+        PasswordField repetir = new PasswordField();
+        GridPane g = Ui.formulario();
+        g.addRow(0, new Label("Nova senha (min. "
+                + br.com.kleber.psigestor.service.AutenticacaoService.SENHA_MINIMA + ")"), nova);
+        g.addRow(1, new Label("Repita a nova senha"), repetir);
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Redefinir senha de " + u.getNome());
+        d.setHeaderText(null);
+        d.getDialogPane().setContent(g);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {
+            if (!nova.getText().equals(repetir.getText())) {
+                Ui.erro("As senhas nao conferem.");
+                ev.consume();
+                return;
+            }
+            if (!Ui.executar(() -> ctx.autenticacao.redefinirSenhaSecretaria(u.getId(), nova.getText().toCharArray())))
+                ev.consume();
+        });
+        if (d.showAndWait().filter(b -> b == ButtonType.OK).isPresent())
+            Ui.info("Senha redefinida. Entregue a nova senha pessoalmente.");
+        nova.clear();
+        repetir.clear();
+    }
+
     private boolean confirmarDesativacao(Usuario u) {
         if (!u.isPsicologo())
             return Ui.confirmar("Desativar " + u.getNome() + "? O usuario nao conseguira mais entrar no sistema.");

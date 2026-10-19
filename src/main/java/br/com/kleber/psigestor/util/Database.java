@@ -32,9 +32,11 @@ public class Database implements AutoCloseable {
      *  v5: dinheiro em centavos: convenio.valor_sessao, servico.valor, atendimento.valor REAL -> INTEGER
      *  v6: atendimento.percentual_repasse_clinica (congelado no REALIZADO; existentes = percentual atual)
      *      e paciente.anonimizado_em
+     *  v7: usuario.dek_recuperacao, salt_recuperacao, iteracoes_recuperacao (codigo de recuperacao; nulos)
+     *  v8: usuario.termos_versao (0 = nunca aceitou) e usuario.termos_aceitos_em (aceite dos termos de uso)
      * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 6;
+    public static final int VERSAO_ESQUEMA = 8;
     private static final String PREFIXO_URL = "jdbc:sqlite:";
 
     private final String url;
@@ -127,6 +129,17 @@ public class Database implements AutoCloseable {
                            (SELECT u.percentual_repasse_clinica FROM usuario u WHERE u.id = atendimento.profissional_id)
                      WHERE percentual_repasse_clinica IS NULL""");
                 adicionarColunaSeFaltar(st, "paciente", "anonimizado_em", "TEXT");
+            }
+            if (versao < 7) {
+                // nulos: o psicologo gera o codigo no proximo login (a DEK so existe com a senha dele)
+                adicionarColunaSeFaltar(st, "usuario", "dek_recuperacao", "BLOB");
+                adicionarColunaSeFaltar(st, "usuario", "salt_recuperacao", "TEXT");
+                adicionarColunaSeFaltar(st, "usuario", "iteracoes_recuperacao", "INTEGER");
+            }
+            if (versao < 8) {
+                // 0: quem ja usava o sistema aceita os termos no proximo login
+                adicionarColunaSeFaltar(st, "usuario", "termos_versao", "INTEGER NOT NULL DEFAULT 0");
+                adicionarColunaSeFaltar(st, "usuario", "termos_aceitos_em", "TEXT");
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));

@@ -101,7 +101,7 @@ Detalhes completos em [docs/POLITICA_DADOS.md](docs/POLITICA_DADOS.md), [docs/RE
 | JDK | 21 (`maven.compiler.release` = 21) |
 | Maven | 3.9+ |
 
-JavaFX 21.0.5, sqlite-jdbc 3.46.1.3 e JUnit 5.11.3 são baixados pelo Maven. Não há servidor, perfis Maven nem variáveis de ambiente a configurar.
+JavaFX 21.0.5, sqlite-jdbc 3.46.1.3 e JUnit 5.11.3 são baixados pelo Maven. Não há servidor nem variáveis de ambiente a configurar.
 
 ```bash
 git clone https://github.com/KleberCS84/PsiGestor.git
@@ -111,9 +111,13 @@ mvn javafx:run     # abre o sistema (javafx-maven-plugin 0.0.8, classe br.com.kl
 mvn clean test     # testes JUnit 5 (maven-surefire-plugin 3.5.2), com SQLite em memória
 ```
 
-`ui.Launcher` é um ponto de entrada alternativo (classe que não estende `Application`), útil para empacotar em um `.jar` único.
+`ui.Launcher` é um ponto de entrada alternativo (classe que não estende `Application`), usado pelo instalador.
 
-**Primeiro acesso.** O sistema pede o cadastro do psicólogo responsável e a definição da senha (mínimo de 12 caracteres). Não há recuperação de senha: **senha perdida significa prontuário irrecuperável**.
+**Instalador Windows.** `mvn -P instalador clean package` gera `target/instalador/PsiGestor-<versão>.exe` com Java e JavaFX embutidos, atalhos no menu Iniciar e na área de trabalho (requer WiX Toolset 3.x). Passo a passo em [docs/BUILD.md](docs/BUILD.md). Desinstalar não apaga a pasta de dados. A versão instalada aparece em **Sobre**.
+
+**Primeiro acesso.** O sistema mostra os termos de uso (aceite obrigatório, gravado com versão e data e auditado como `TERMOS_ACEITOS`) e pede o cadastro do psicólogo responsável e a definição da senha (mínimo de 12 caracteres). Cada usuário aceita os termos no seu primeiro login, e uma versão nova dos termos pede novo aceite. Perdidos a senha **e** o código de recuperação, o prontuário é irrecuperável.
+
+**Lembrete de backup.** O Painel do psicólogo mostra um aviso com o botão "Fazer backup agora" quando o último backup tem mais de 7 dias ou quando nunca houve backup.
 
 **Onde ficam os dados** (`user.home`, ex.: `C:\Users\<voce>\PsiGestor`):
 
@@ -135,7 +139,7 @@ Itens avaliados e mantidos em aberto de propósito (detalhes em [docs/REVISAO.md
 - **Senha e chave em memória.** A `String` digitada na UI e a senha usada no cadastro não são zeradas, e a DEK permanece na memória até o coletor de lixo; um dump de memória do processo pode expô-las.
 - **Banco principal sem cifra no aplicativo.** Depende do BitLocker (ver acima).
 - **Contador de tentativas de login em memória.** Fechar e reabrir o aplicativo zera o bloqueio, e ele não protege contra ataque offline ao arquivo `.db`.
-- **Sem recuperação de senha.** Senha perdida significa prontuário irrecuperável.
+- **Recuperação de senha só com o código.** O psicólogo recebe um código de recuperação de 128 bits, mostrado uma única vez; com ele, "Esqueci a senha" define uma senha nova sem perder o prontuário. Perdidos a senha **e** o código, o prontuário é irrecuperável, e quem tiver o código e o login lê o prontuário daquele psicólogo. A senha da secretaria é redefinida por um psicólogo.
 - **Eliminação do prontuário não decidida nem implementada.** A anonimização não toca o prontuário, e os triggers impedem apagá-lo.
 - **Anonimização parcial.** `convenio_id` e a observação livre dos consentimentos não são alterados. Backups feitos antes da anonimização ainda contêm os dados originais.
 - **Restauração de backup** devolve o estado da data do backup: as senhas daquela data, usuários desativados depois dela de novo ativos e pacientes anonimizados depois dela de novo identificados. O sistema só avisa antes de restaurar; é preciso revisar a Equipe e refazer as anonimizações.
@@ -149,5 +153,6 @@ Itens avaliados e mantidos em aberto de propósito (detalhes em [docs/REVISAO.md
 - [docs/POLITICA_DADOS.md](docs/POLITICA_DADOS.md): anonimização, guarda, backup e exportação
 - [docs/REVISAO.md](docs/REVISAO.md): revisão de código, achados e limitações
 - [docs/PONTOS_DE_ATENCAO_LEGAIS.md](docs/PONTOS_DE_ATENCAO_LEGAIS.md): pontos legais e éticos
+- [docs/BUILD.md](docs/BUILD.md): geração do instalador Windows (jpackage)
 
 Não substitui orientação jurídica nem do conselho profissional.

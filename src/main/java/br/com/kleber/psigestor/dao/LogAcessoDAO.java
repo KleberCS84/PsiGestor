@@ -3,8 +3,10 @@ package br.com.kleber.psigestor.dao;
 import br.com.kleber.psigestor.model.LogAcesso;
 
 import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class LogAcessoDAO {
     private final Connection con;
@@ -25,6 +27,17 @@ public class LogAcessoDAO {
             ps.setString(5, detalhe);
             ps.executeUpdate();
         } catch (SQLException e) { throw new DaoException("Erro ao gravar log", e); }
+    }
+
+    /** Quando a acao aconteceu pela ultima vez (data_hora e texto "yyyy-MM-dd HH:mm:ss", hora local). */
+    public Optional<LocalDateTime> ultimaDataHora(String acao) {
+        try (PreparedStatement ps = con.prepareStatement("SELECT MAX(data_hora) FROM log_acesso WHERE acao = ?")) {
+            ps.setString(1, acao);
+            try (ResultSet rs = ps.executeQuery()) {
+                String texto = rs.next() ? rs.getString(1) : null;
+                return texto == null ? Optional.empty() : Optional.of(LocalDateTime.parse(texto.replace(' ', 'T')));
+            }
+        } catch (SQLException e) { throw new DaoException("Erro ao ler log", e); }
     }
 
     public List<LogAcesso> ultimos(int limite) {

@@ -181,7 +181,7 @@ Situacao: 18 corrigidos, 3 parciais (A5, B6, B9), 3 abertos e documentados como 
 | Senha | PBKDF2-HMAC-SHA256, salt de 16 bytes, comparacao em tempo constante (`Criptografia.hashSenha`/`senhaConfere`). 600.000 iteracoes, contagem gravada por usuario e migrada no login; senha minima de 12 (M5). Login inexistente/inativo tambem paga o PBKDF2 (B5). |
 | Backup | Arquivo `.psgb` cifrado com AES-GCM e chave derivada de uma senha de backup (A5, B4); formato v2 grava as iteracoes no cabecalho autenticado e ainda le a v1 (`Criptografia.cifrarComSenha`/`decifrarComSenha`). |
 | AAD | Nao usado (M4, ver secao 4). |
-| Recuperacao | Inexistente: senha perdida = prontuario irrecuperavel. E comunicado ao usuario (primeiro acesso em `ui/TelaLogin.java` e `ui/TrocaSenhaDialog.java`), mas e risco de disponibilidade; considerar chave de recuperacao guardada offline. |
+| Recuperacao | Codigo de recuperacao do psicologo (128 bits, mostrado uma vez): segundo embrulho da DEK por PBKDF2 do codigo (`usuario.dek_recuperacao`, migracao v7); "Esqueci a senha" reembrulha a DEK com a senha nova e troca o codigo, em uma transacao, com o mesmo bloqueio do login (`AutenticacaoService.recuperarAcesso`, `util/CodigoRecuperacao`). Secretaria: senha redefinida por psicologo. Risco restante: perder senha e codigo; codigo vazado = acesso ao prontuario. Ver `docs/POLITICA_DADOS.md` secao 4. |
 | Metadados | `paciente_id`, `profissional_id`, `atendimento_id`, `registrado_em`, `retifica_id` ficam em claro (revelam frequencia e cronologia). |
 
 ### 3.2 Vazamento em logs, toString e mensagens

@@ -14,6 +14,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TableView;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
+import javafx.stage.Window;
 
 import java.awt.Desktop;
 import java.io.File;
@@ -52,6 +53,20 @@ public class PrivacidadeView {
         if (a.showAndWait().orElse(ButtonType.OK) == abrirPasta) abrirPasta(copia.getParent());
     }
 
+    /** Escolha da pasta + senha + backup cifrado. Usado aqui e no lembrete do Painel; true se gerou. */
+    static boolean fazerBackup(Contexto ctx, Window dono) {
+        DirectoryChooser dc = new DirectoryChooser();
+        dc.setTitle("Pasta do backup (prefira um pendrive/disco criptografado)");
+        File pasta = dc.showDialog(dono);
+        if (pasta == null) return false;
+        return SenhaBackupDialog.pedir("Senha do backup", "Minimo de " + AutenticacaoService.SENHA_MINIMA
+                + " caracteres. A senha NAO e guardada: sem ela o backup nao pode ser restaurado. "
+                + "Anote-a em local seguro, separado do backup.", true)
+                .map(s -> Ui.executar(() -> Ui.info("Backup cifrado salvo em:\n"
+                        + ctx.backup.gerar(pasta.toPath(), s.senha(), s.confirmacao()))))
+                .orElse(false);
+    }
+
     private static void abrirPasta(Path pasta) {
         try {
             Desktop.getDesktop().open(pasta.toFile());
@@ -74,17 +89,7 @@ public class PrivacidadeView {
         Button backup = new Button("Gerar backup agora");
         backup.getStyleClass().add("primario");
         backup.setDisable(!ctx.getSessao().usuario().isPsicologo());
-        backup.setOnAction(e -> {
-            DirectoryChooser dc = new DirectoryChooser();
-            dc.setTitle("Pasta do backup (prefira um pendrive/disco criptografado)");
-            File pasta = dc.showDialog(log.getScene().getWindow());
-            if (pasta == null) return;
-            SenhaBackupDialog.pedir("Senha do backup", "Minimo de " + AutenticacaoService.SENHA_MINIMA
-                    + " caracteres. A senha NAO e guardada: sem ela o backup nao pode ser restaurado. "
-                    + "Anote-a em local seguro, separado do backup.", true)
-                    .ifPresent(s -> Ui.executar(() -> Ui.info("Backup cifrado salvo em:\n"
-                            + ctx.backup.gerar(pasta.toPath(), s.senha(), s.confirmacao()))));
-        });
+        backup.setOnAction(e -> fazerBackup(ctx, log.getScene().getWindow()));
 
         Button restaurar = new Button("Restaurar backup...");
         restaurar.setDisable(!ctx.getSessao().usuario().isPsicologo());

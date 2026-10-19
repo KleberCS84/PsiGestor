@@ -47,6 +47,11 @@ Tela **Privacidade & Seguranca**, botao **"Gerar backup agora"**.
 | Nome | `psigestor_backup_<aaaaMMdd_HHmmss>_<8 hex aleatorios>.psgb`; nunca sobrescreve um arquivo existente. |
 | Auditoria | Evento `BACKUP`. |
 
+**Lembrete.** O backup e responsabilidade do usuario (termos de uso, item 2). Para o psicologo logado, o
+Painel mostra um aviso com o botao **"Fazer backup agora"** quando o ultimo evento `BACKUP` da trilha tem mais
+de 7 dias (`BackupService.INTERVALO_LEMBRETE`) ou quando nunca houve backup. A secretaria nao ve o aviso
+(nao pode gerar backup). Restauracao (`RESTAURACAO_BACKUP`) nao conta como backup.
+
 ### 3.2 Restauracao
 
 Botao **"Restaurar backup..."** (somente psicologo): escolher o `.psgb`, informar a senha, confirmar.
@@ -63,7 +68,8 @@ A copia `antes-restauracao` contem os dados em claro (como o proprio banco): apa
 
 - as senhas dos usuarios voltam a ser as vigentes na data do backup. Senhas trocadas depois disso deixam de valer; quem nao lembrar a senha antiga precisa que ela seja redefinida;
 - usuarios **desativados** depois do backup voltam a ficar **ativos** e conseguem entrar: revise a tela Equipe e desative-os de novo;
-- pacientes **anonimizados** depois do backup voltam com os dados pessoais: refaca as anonimizacoes.
+- pacientes **anonimizados** depois do backup voltam com os dados pessoais: refaca as anonimizacoes;
+- os **codigos de recuperacao** voltam a ser os da data do backup: um codigo gerado depois deixa de funcionar e um codigo ja substituido volta a valer. Gere um novo codigo (Trocar senha) apos restaurar (ver 4).
 
 ### 3.2.1 Atualizacao do banco (migracao de versao)
 
@@ -89,3 +95,30 @@ Recomendacao obrigatoria para o computador do consultorio:
 - guardar a chave de recuperacao do BitLocker fora do computador;
 - usar conta do Windows com senha e bloqueio de tela automatico;
 - guardar os backups `.psgb` em midia separada (pendrive/disco externo, de preferencia tambem cifrado).
+
+## 4. Recuperacao de acesso (codigo de recuperacao)
+
+Senha perdida sem codigo = prontuario ilegivel para sempre (a chave do prontuario so abre com a senha). O codigo de recuperacao e uma segunda forma de abrir a mesma chave.
+
+| Item | Regra |
+|---|---|
+| Quem tem | Somente **psicologo** (so ele tem chave de prontuario). |
+| Codigo | 128 bits aleatorios (`SecureRandom`) em base32 sem caracteres ambiguos (sem I, L, O, U), mais 2 caracteres de verificacao: `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`. Na digitacao, minusculas, espacos, `O` (= 0) e `I`/`L` (= 1) sao aceitos; erro de digitacao e apontado sem gastar tentativa. |
+| Exibicao | **Uma unica vez**, com botoes **Copiar** e **Imprimir**. A janela so fecha depois de digitar os 4 ultimos caracteres. Guarde fora do computador (papel em local seguro, cofre de senhas). |
+| Armazenamento | O codigo **nao e gravado** em lugar nenhum (nem em log). O banco guarda so um segundo embrulho da chave do prontuario: `usuario.dek_recuperacao` (IV + chave cifrada com AES-256-GCM), `salt_recuperacao` e `iteracoes_recuperacao` (PBKDF2-HMAC-SHA256, 600.000). Nulos = codigo ainda nao gerado. |
+| Quando e gerado | No primeiro acesso, logo apos criar o psicologo. Psicologo que ainda nao tem codigo (ex.: banco anterior a v7) recebe um aviso **a cada login** ate gerar. Em **Trocar senha**, "Gerar novo codigo de recuperacao". Gerar pede a senha atual; o codigo anterior deixa de valer. |
+| Recuperacao | Tela de login, **"Esqueci a senha"**: login + codigo + nova senha (minimo 12). O codigo abre a chave do prontuario, que e embrulhada pela nova senha; um **novo codigo** e gerado e mostrado (o usado deixa de valer). Tudo em uma transacao. Depois, entra-se com a nova senha; o prontuario continua legivel. |
+| Tentativas erradas | Mesmo bloqueio progressivo do login, contado junto com as senhas erradas do mesmo login (5 falhas: 30 s, dobrando ate 15 min). Login inexistente, secretaria ou psicologo sem codigo recebem a mesma resposta de codigo errado. |
+| Auditoria | `RECUPERACAO_GERADA`, `RECUPERACAO_USADA`, `RECUPERACAO_FALHOU` em `log_acesso` (sem o codigo). |
+| Secretaria | Nao tem chave de prontuario nem codigo. Se esquecer a senha, um psicologo define uma nova na tela **Equipe** ("Redefinir senha (secretaria)"), evento `REDEFINICAO_SENHA`. A senha de psicologo nunca e redefinida por outra pessoa. |
+| Riscos | Quem tiver o codigo e o login tem acesso total ao prontuario daquele psicologo: guarde-o como uma chave do consultorio. Perdidos a senha **e** o codigo, o prontuario continua irrecuperavel. Restaurar um backup traz de volta o codigo vigente na data do backup (ver 3.2). |
+
+## 5. Termos de uso (aceite)
+
+| Item | Regra |
+|---|---|
+| Texto | `src/main/resources/termos/termos-v<N>.md`: software "como esta", backup e responsabilidade do usuario, o desenvolvedor nao tem acesso aos dados, nao substitui a orientacao do CFP/CRP. Visivel a qualquer momento em **Sobre > Ver termos de uso**. |
+| Quando | Primeiro acesso: antes de criar a conta do psicologo responsavel (recusar = nada e gravado). Depois, no primeiro login de cada usuario, inclusive secretaria. |
+| Obrigatorio | Sem aceite a sessao e encerrada e o login nao segue. |
+| Registro | `usuario.termos_versao` e `usuario.termos_aceitos_em` (hora local, `yyyy-MM-ddTHH:mm:ss`), migracao v8; evento `TERMOS_ACEITOS` em `log_acesso` com detalhe `v<N>`. Usuarios de bancos anteriores a v8 ficam com versao 0 e aceitam no proximo login. |
+| Versao nova | Novo arquivo `termos-v<N+1>.md` e `Termos.VERSAO_ATUAL = N+1`: todos aceitam de novo no proximo login. |

@@ -24,9 +24,17 @@ public class TrocaSenhaDialog {
         VBox conteudo = new VBox(8, g);
         if (ctx.getSessao().usuario().isPsicologo()) {
             Label aviso = Ui.aviso("Seus registros de prontuario continuam legiveis com a nova senha. "
-                    + "Lembre: se a nova senha for perdida, os registros nao podem ser recuperados.");
+                    + "Se a senha for perdida, so o codigo de recuperacao devolve o acesso.");
             aviso.setMaxWidth(420);
-            conteudo.getChildren().add(aviso);
+            Button novoCodigo = new Button("Gerar novo codigo de recuperacao");
+            novoCodigo.setOnAction(e -> {
+                if (!Ui.confirmar("Gerar um novo codigo de recuperacao? O codigo anterior deixa de valer.\n"
+                        + "Usa a senha digitada em \"Senha atual\".")) return;
+                String[] codigo = {null};
+                if (Ui.executar(() -> codigo[0] = ctx.autenticacao.gerarCodigoRecuperacao(atual.getText().toCharArray())))
+                    CodigoRecuperacaoDialog.mostrar(codigo[0]);
+            });
+            conteudo.getChildren().addAll(aviso, novoCodigo);
         }
 
         Dialog<ButtonType> d = new Dialog<>();
