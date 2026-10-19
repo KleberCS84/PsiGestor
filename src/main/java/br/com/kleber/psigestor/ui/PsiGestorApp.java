@@ -50,7 +50,7 @@ public class PsiGestorApp extends Application {
             return;
         }
         palco = stage;
-        stage.setTitle("PsiGestor " + Versao.atual() + " - consultorio de psicologia");
+        stage.setTitle("PsiGestor " + Versao.atual() + " - consultório de psicologia");
         stage.setMinWidth(1000);
         stage.setMinHeight(650);
         mostrarLogin();
@@ -59,12 +59,12 @@ public class PsiGestorApp extends Application {
 
     /** Sem detalhe tecnico (pode ter caminho/SQL): ele fica no log da pasta logs. */
     static String mensagemFalhaAoAbrir(Path pasta) {
-        return "Nao foi possivel abrir ou atualizar o banco de dados do PsiGestor. Nenhum dado foi apagado.\n\n"
-                + "Se esta versao do programa precisou atualizar o banco, a copia de antes da atualizacao esta em\n"
+        return "Não foi possível abrir ou atualizar o banco de dados do PsiGestor. Nenhum dado foi apagado.\n\n"
+                + "Se esta versão do programa precisou atualizar o banco, a cópia de antes da atualização está em\n"
                 + pasta.resolve("psigestor.db.pre-v" + Database.VERSAO_ESQUEMA) + ".\n"
-                + "Nao abra o banco com uma versao mais antiga do PsiGestor.\n\n"
-                + "Detalhe tecnico para o suporte: " + pasta.resolve("logs") + "\n"
-                + "O programa sera fechado.";
+                + "Não abra o banco com uma versão mais antiga do PsiGestor.\n\n"
+                + "Detalhe técnico para o suporte: " + pasta.resolve("logs") + "\n"
+                + "O programa será fechado.";
     }
 
     void mostrarLogin() {
@@ -85,7 +85,7 @@ public class PsiGestorApp extends Application {
                 pararInatividade();
                 mostrarLogin();
                 // dialogo modal nao pode abrir dentro do tratador da animacao
-                Platform.runLater(() -> Ui.info("Sessao encerrada por inatividade."));
+                Platform.runLater(() -> Ui.info("Sessão encerrada por inatividade."));
             }
         }));
         inatividade.setCycleCount(Animation.INDEFINITE);

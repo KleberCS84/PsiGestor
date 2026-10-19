@@ -21,7 +21,7 @@ import java.util.List;
  */
 public class ProntuarioService {
     private static final DateTimeFormatter SQLITE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    public static final String SIGILOSO = "[Registro de outro profissional - conteudo sigiloso]";
+    public static final String SIGILOSO = "[Registro de outro profissional - conteúdo sigiloso]";
     private final Contexto ctx;
 
     ProntuarioService(Contexto ctx) { this.ctx = ctx; }
@@ -36,7 +36,7 @@ public class ProntuarioService {
 
     private int gravar(int pacienteId, Integer atendimentoId, String texto, Integer retificaId) {
         Sessao s = exigirPsicologo();
-        if (Validadores.vazio(texto)) throw new RegraNegocioException("O registro esta vazio.");
+        if (Validadores.vazio(texto)) throw new RegraNegocioException("O registro está vazio.");
         ctx.pacienteService.buscar(pacienteId);
         byte[][] ivECifrado = Criptografia.cifrar(texto.strip(), s.chaveProntuario());
         // sem log nao ha registro: se a auditoria falhar, o INSERT e desfeito (repetir nao duplica)
@@ -49,7 +49,7 @@ public class ProntuarioService {
     }
 
     /** Texto mostrado no lugar de um registro que nao decifra (tag GCM invalida: dado adulterado/corrompido). */
-    public static String ilegivel(int evolucaoId) { return "[registro ilegivel #" + evolucaoId + "]"; }
+    public static String ilegivel(int evolucaoId) { return "[registro ilegível #" + evolucaoId + "]"; }
 
     public List<Evolucao> listar(int pacienteId) {
         Sessao s = exigirPsicologo();
@@ -84,7 +84,7 @@ public class ProntuarioService {
     private Sessao exigirPsicologo() {
         Sessao s = ctx.exigirSessao();
         if (!s.podeLerProntuario())
-            throw new RegraNegocioException("Acesso ao prontuario restrito ao psicologo (sigilo profissional).");
+            throw new RegraNegocioException("Acesso ao prontuário restrito ao psicólogo (sigilo profissional).");
         return s;
     }
 }

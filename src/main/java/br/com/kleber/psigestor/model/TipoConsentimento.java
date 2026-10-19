@@ -1,9 +1,9 @@
 package br.com.kleber.psigestor.model;
 
 public enum TipoConsentimento {
-    CONTRATO_TERAPEUTICO("Contrato terapeutico / ciencia do tratamento de dados"),
+    CONTRATO_TERAPEUTICO("Contrato terapêutico / ciência do tratamento de dados"),
     CONTATO_WHATSAPP_EMAIL("Aceita lembretes por WhatsApp/e-mail"),
-    ATENDIMENTO_ONLINE("Ciencia e aceite do atendimento online");
+    ATENDIMENTO_ONLINE("Ciência e aceite do atendimento on-line");
 
     private final String descricao;
 

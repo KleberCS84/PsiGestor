@@ -48,7 +48,7 @@ public class UsuarioDAO {
             ps.setDouble(1, percentualClinica);
             ps.setInt(2, id);
             // id inexistente: sem isso o service auditaria um evento que nao aconteceu
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar repasse", e); }
     }
 
@@ -56,7 +56,7 @@ public class UsuarioDAO {
     public void desativar(int id) {
         try (PreparedStatement ps = con.prepareStatement("UPDATE usuario SET ativo = 0 WHERE id = ?")) {
             ps.setInt(1, id);
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao desativar usuario", e); }
     }
 
@@ -64,7 +64,7 @@ public class UsuarioDAO {
     public void reativar(int id) {
         try (PreparedStatement ps = con.prepareStatement("UPDATE usuario SET ativo = 1 WHERE id = ?")) {
             ps.setInt(1, id);
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao reativar usuario", e); }
     }
 
@@ -102,7 +102,7 @@ public class UsuarioDAO {
             ps.setObject(9, u.getIteracoesRecuperacao());
             ps.setInt(10, u.getId());
             // id inexistente: sem isso o service auditaria uma troca de senha que nao aconteceu
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar credenciais", e); }
     }
 
@@ -113,7 +113,7 @@ public class UsuarioDAO {
             ps.setInt(1, versao);
             ps.setString(2, aceitoEm);
             ps.setInt(3, id);
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuario nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao registrar aceite dos termos", e); }
     }
 

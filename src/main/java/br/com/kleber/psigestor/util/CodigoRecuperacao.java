@@ -18,7 +18,7 @@ public final class CodigoRecuperacao {
     private static final int BYTES = 16;
     private static final SecureRandom RANDOM = new SecureRandom();
     /** Mensagem fixa: nunca ecoa o que foi digitado. */
-    public static final String DIGITADO_ERRADO = "Codigo de recuperacao digitado incorretamente. Confira os caracteres.";
+    public static final String DIGITADO_ERRADO = "Código de recuperação digitado incorretamente. Confira os caracteres.";
 
     private CodigoRecuperacao() { }
 

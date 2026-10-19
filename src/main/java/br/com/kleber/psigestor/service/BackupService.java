@@ -50,12 +50,12 @@ public class BackupService {
     /** Gera o backup cifrado em {@code pasta}; a senha e pedida duas vezes (senha e confirmacao). */
     public Path gerar(Path pasta, char[] senha, char[] confirmacao) {
         try {
-            exigirPsicologo("Backup restrito ao psicologo responsavel.");
+            exigirPsicologo("Backup restrito ao psicólogo responsável.");
             if (senha == null || senha.length < AutenticacaoService.SENHA_MINIMA)
                 throw new RegraNegocioException("A senha do backup deve ter pelo menos "
                         + AutenticacaoService.SENHA_MINIMA + " caracteres.");
             if (!Arrays.equals(senha, confirmacao))
-                throw new RegraNegocioException("As senhas do backup nao conferem.");
+                throw new RegraNegocioException("As senhas do backup não conferem.");
             Path destino;
             Path temp = null;
             try {
@@ -67,7 +67,7 @@ public class BackupService {
                 }
                 try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + claro);
                      Statement st = c.createStatement()) {
-                    exigirIntegridade(st, "A copia do banco falhou na verificacao de integridade. Backup nao gerado.");
+                    exigirIntegridade(st, "A cópia do banco falhou na verificação de integridade. Backup não gerado.");
                 }
                 byte[] dados = Files.readAllBytes(claro);
                 byte[] pacote = Criptografia.cifrarComSenha(dados, senha);
@@ -79,8 +79,8 @@ public class BackupService {
             } catch (SQLException | IOException e) {
                 // a mensagem do driver/SO traz caminhos: vai para o log tecnico, nao para a tela
                 LogTecnico.erro("Falha no backup", e);
-                throw new RegraNegocioException("Nao foi possivel gerar o backup. Verifique se a pasta permite "
-                        + "gravacao e se ha espaco em disco.");
+                throw new RegraNegocioException("Não foi possível gerar o backup. Verifique se a pasta permite "
+                        + "gravação e se há espaço em disco.");
             } finally {
                 apagar(temp);
             }
@@ -106,7 +106,7 @@ public class BackupService {
      */
     public Path restaurar(Path arquivo, char[] senha) {
         try {
-            Sessao s = exigirPsicologo("Restauracao restrita ao psicologo responsavel.");
+            Sessao s = exigirPsicologo("Restauração restrita ao psicólogo responsável.");
             if (senha == null || senha.length == 0) throw new RegraNegocioException("Informe a senha do backup.");
             Path banco = db.arquivo();
             Path temp = null;
@@ -120,7 +120,7 @@ public class BackupService {
                     Files.write(novo, claro, StandardOpenOption.CREATE_NEW);
                 } catch (IOException e) {
                     LogTecnico.erro("Falha ao preparar restauracao", e);
-                    throw new RegraNegocioException("Nao foi possivel preparar a restauracao. Verifique o espaco em disco.");
+                    throw new RegraNegocioException("Não foi possível preparar a restauração. Verifique o espaço em disco.");
                 } finally {
                     Arrays.fill(claro, (byte) 0);
                 }
@@ -137,7 +137,7 @@ public class BackupService {
                     Files.move(novo, banco, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 } catch (IOException e) {
                     LogTecnico.erro("Falha ao substituir o banco na restauracao", e);
-                    throw new RegraNegocioException("Nao foi possivel substituir o banco; o banco atual foi mantido. "
+                    throw new RegraNegocioException("Não foi possível substituir o banco; o banco atual foi mantido. "
                             + "Reinicie o PsiGestor.");
                 }
                 return copia;
@@ -176,7 +176,7 @@ public class BackupService {
             return Files.readAllBytes(arquivo);
         } catch (IOException e) {
             LogTecnico.erro("Falha ao ler backup", e);
-            throw new RegraNegocioException("Nao foi possivel ler o arquivo de backup.");
+            throw new RegraNegocioException("Não foi possível ler o arquivo de backup.");
         }
     }
 
@@ -187,12 +187,12 @@ public class BackupService {
     private static void validarERegistrar(Path novo, String login) {
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + novo);
              Statement st = c.createStatement()) {
-            exigirIntegridade(st, "O backup falhou na verificacao de integridade. Nada foi alterado.");
+            exigirIntegridade(st, "O backup falhou na verificação de integridade. Nada foi alterado.");
             try (ResultSet rs = st.executeQuery("""
                     SELECT count(*) FROM sqlite_master
                      WHERE type = 'table' AND name IN ('usuario', 'paciente', 'log_acesso')""")) {
                 if (!rs.next() || rs.getInt(1) != 3)
-                    throw new RegraNegocioException("O arquivo nao contem um banco do PsiGestor. Nada foi alterado.");
+                    throw new RegraNegocioException("O arquivo não contém um banco do PsiGestor. Nada foi alterado.");
             }
             int versao;
             try (ResultSet rs = st.executeQuery("PRAGMA user_version")) {
@@ -200,7 +200,7 @@ public class BackupService {
             }
             // versao mais antiga e migrada pelo Database ao reiniciar; mais nova o app nao conhece
             if (versao > Database.VERSAO_ESQUEMA)
-                throw new RegraNegocioException("Backup gerado por uma versao mais nova do PsiGestor. "
+                throw new RegraNegocioException("Backup gerado por uma versão mais nova do PsiGestor. "
                         + "Atualize o programa antes de restaurar.");
             try (PreparedStatement ps = c.prepareStatement("""
                     INSERT INTO log_acesso (usuario_id, acao)
@@ -210,7 +210,7 @@ public class BackupService {
             }
         } catch (SQLException e) {
             LogTecnico.erro("Backup decifrado nao e um banco valido", e);
-            throw new RegraNegocioException("O arquivo nao contem um banco valido do PsiGestor. Nada foi alterado.");
+            throw new RegraNegocioException("O arquivo não contém um banco válido do PsiGestor. Nada foi alterado.");
         }
     }
 

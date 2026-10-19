@@ -142,7 +142,7 @@ public final class Criptografia {
      */
     public static byte[] decifrarComSenha(byte[] pacote, char[] senha) {
         RegraNegocioException formatoInvalido =
-                new RegraNegocioException("Arquivo nao e um backup do PsiGestor ou versao nao suportada.");
+                new RegraNegocioException("Arquivo não é um backup do PsiGestor ou versão não suportada.");
         if (pacote.length <= MAGICO_BACKUP.length
                 || !Arrays.equals(pacote, 0, MAGICO_BACKUP.length, MAGICO_BACKUP, 0, MAGICO_BACKUP.length))
             throw formatoInvalido;
@@ -197,7 +197,7 @@ public final class Criptografia {
             c.init(Cipher.DECRYPT_MODE, chave, new GCMParameterSpec(TAM_TAG_BITS, iv));
             return c.doFinal(cifrado);
         } catch (GeneralSecurityException e) {
-            throw new RegraNegocioException("Nao foi possivel decifrar o registro (chave incorreta ou dado adulterado).");
+            throw new RegraNegocioException("Não foi possível decifrar o registro (chave incorreta ou dado adulterado).");
         }
     }
 

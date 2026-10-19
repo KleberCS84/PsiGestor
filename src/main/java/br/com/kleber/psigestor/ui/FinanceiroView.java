@@ -29,10 +29,10 @@ public class FinanceiroView {
         atualizar.setOnAction(e -> carregar());
 
         repasse.getColumns().add(Ui.col("Profissional", FinanceiroService.LinhaRepasse::profissional, 220));
-        repasse.getColumns().add(Ui.col("Sessoes", FinanceiroService.LinhaRepasse::sessoes, 80));
+        repasse.getColumns().add(Ui.col("Sessões", FinanceiroService.LinhaRepasse::sessoes, 80));
         repasse.getColumns().add(Ui.col("Bruto", l -> Ui.moeda(l.bruto()), 120));
-        repasse.getColumns().add(Ui.col("Parte da clinica", l -> Ui.moeda(l.parteClinica()), 130));
-        repasse.getColumns().add(Ui.col("Liquido profissional", l -> Ui.moeda(l.liquidoProfissional()), 150));
+        repasse.getColumns().add(Ui.col("Parte da clínica", l -> Ui.moeda(l.parteClinica()), 130));
+        repasse.getColumns().add(Ui.col("Líquido profissional", l -> Ui.moeda(l.liquidoProfissional()), 150));
         repasse.setMinHeight(150);
         repasse.setPrefHeight(170);
         lancamentos.setMinHeight(200);
@@ -42,21 +42,21 @@ public class FinanceiroView {
         lancamentos.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 160));
         lancamentos.getColumns().add(Ui.col("Status", a -> a.getStatus() == StatusAtendimento.FALTOU
                 ? "Falta cobrada" : "Realizada", 110));
-        lancamentos.getColumns().add(Ui.col("Tipo", a -> a.getConvenioId() == null ? "Particular" : "Convenio", 90));
+        lancamentos.getColumns().add(Ui.col("Tipo", a -> a.getConvenioId() == null ? "Particular" : "Convênio", 90));
         lancamentos.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()), 100));
-        lancamentos.getColumns().add(Ui.col("Pago", a -> a.isPago() ? a.getFormaPagamento() : "PENDENTE", 110));
+        lancamentos.getColumns().add(Ui.col("Pago", a -> a.isPago() ? Ui.formaPagamento(a.getFormaPagamento()) : "PENDENTE", 110));
         lancamentos.getColumns().add(Ui.col("Recibo", a -> a.getConvenioId() != null ? "n/a"
                 : a.isReciboEmitido() ? "Emitido" : "A emitir", 90));
 
         carregar();
         return Ui.tela(Ui.titulo("Financeiro"),
-                Ui.linha(new Label("De"), de, new Label("ate"), ate, atualizar),
+                Ui.linha(new Label("De"), de, new Label("até"), ate, atualizar),
                 cards,
                 Ui.titulo("Repasse por profissional"), repasse,
-                Ui.titulo("Lancamentos do periodo"), lancamentos,
-                Ui.aviso("Recibos de pessoa fisica: emita pelo app/portal Receita Saude (Receita Federal) e marque "
-                        + "\"Recibo emitido\" na Agenda. Este sistema nao emite documento fiscal. "
-                        + "Os valores aqui sao gerenciais - confira com seu contador."));
+                Ui.titulo("Lançamentos do período"), lancamentos,
+                Ui.aviso("Recibos de pessoa física: emita pelo app/portal Receita Saúde (Receita Federal) e marque "
+                        + "\"Recibo emitido\" na Agenda. Este sistema não emite documento fiscal. "
+                        + "Os valores aqui são gerenciais - confira com seu contador."));
     }
 
     private void carregar() {
@@ -66,7 +66,7 @@ public class FinanceiroView {
                     Ui.card("Faturado", Ui.moeda(r.faturado()), "cor-verde"),
                     Ui.card("Recebido", Ui.moeda(r.recebido()), "cor-azul"),
                     Ui.card("A receber", Ui.moeda(r.aReceber()), "cor-laranja"),
-                    Ui.card("Sessoes realizadas", String.valueOf(r.realizados()), "cor-roxo"),
+                    Ui.card("Sessões realizadas", String.valueOf(r.realizados()), "cor-roxo"),
                     Ui.card("Faltas (" + String.format("%.0f%%", r.taxaFaltas() * 100) + ")", String.valueOf(r.faltas()), "cor-rosa"),
                     Ui.card("Faltas cobradas (" + r.faltasCobradas() + ")", Ui.moeda(r.faltasCobradasCentavos()), "cor-rosa"),
                     Ui.card("Recibos a emitir", String.valueOf(r.recibosPendentes()), "cor-cinza"));

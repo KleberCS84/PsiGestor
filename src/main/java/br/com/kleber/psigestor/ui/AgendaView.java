@@ -43,11 +43,11 @@ public class AgendaView {
         tabela.getColumns().add(Ui.col("Hora", a -> a.getInicio().format(Ui.HORA) + "-" + a.getFim().format(Ui.HORA), 100));
         tabela.getColumns().add(Ui.col("Paciente", Atendimento::getPacienteNome, 200));
         tabela.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 160));
-        tabela.getColumns().add(Ui.col("Servico", Atendimento::getServicoNome, 160));
-        tabela.getColumns().add(Ui.col("Modalidade", Atendimento::getModalidade, 95));
-        tabela.getColumns().add(Ui.col("Status", Atendimento::getStatus, 100));
+        tabela.getColumns().add(Ui.col("Serviço", Atendimento::getServicoNome, 160));
+        tabela.getColumns().add(Ui.col("Modalidade", a -> a.getModalidade().rotulo(), 95));
+        tabela.getColumns().add(Ui.col("Status", a -> a.getStatus().rotulo(), 100));
         tabela.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()) + (a.getConvenioId() != null ? " (conv.)" : ""), 110));
-        tabela.getColumns().add(Ui.col("Pago", a -> a.isPago() ? "Sim - " + a.getFormaPagamento() : "Nao", 100));
+        tabela.getColumns().add(Ui.col("Pago", a -> a.isPago() ? "Sim - " + Ui.formaPagamento(a.getFormaPagamento()) : "Não", 100));
         tabela.getColumns().add(Ui.col("Recibo", a -> a.isReciboEmitido() ? "Emitido" : "-", 80));
 
         var acoes = Ui.linha(
@@ -57,10 +57,10 @@ public class AgendaView {
                 botaoStatus("Cancelar", StatusAtendimento.CANCELADO),
                 botao("Registrar pagamento", this::pagamento),
                 botao("Recibo emitido", a -> {
-                    if (Ui.confirmar("Confirma que o recibo deste atendimento ja foi emitido no Receita Saude?"))
+                    if (Ui.confirmar("Confirma que o recibo deste atendimento já foi emitido no Receita Saúde?"))
                         Ui.executar(() -> ctx.agenda.marcarReciboEmitido(a.getId()));
                 }),
-                botao("Abrir prontuario", a -> principal.abrirProntuario(a.getPacienteId())));
+                botao("Abrir prontuário", a -> principal.abrirProntuario(a.getPacienteId())));
         carregar();
         return Ui.tela(Ui.titulo("Agenda"),
                 Ui.linha(anterior, dia, proximo, filtroProf, Ui.espaco(), novo),
@@ -83,10 +83,13 @@ public class AgendaView {
     }
 
     private void pagamento(Atendimento a) {
-        ChoiceDialog<String> d = new ChoiceDialog<>("PIX", AgendaService.FORMAS_PAGAMENTO);
+        // a tela lista os rotulos com acento; o service recebe o valor gravado
+        var rotulos = AgendaService.FORMAS_PAGAMENTO.stream().map(Ui::formaPagamento).toList();
+        ChoiceDialog<String> d = new ChoiceDialog<>(rotulos.get(0), rotulos);
         d.setHeaderText("Pagamento de " + a.getPacienteNome() + " - " + Ui.moeda(a.getValorCentavos()));
         d.setTitle("Registrar pagamento");
-        d.showAndWait().ifPresent(forma -> Ui.executar(() -> ctx.agenda.registrarPagamento(a.getId(), forma)));
+        d.showAndWait().ifPresent(rotulo -> Ui.executar(() -> ctx.agenda.registrarPagamento(a.getId(),
+                AgendaService.FORMAS_PAGAMENTO.get(rotulos.indexOf(rotulo)))));
     }
 
     private void novoAgendamento() {
@@ -105,12 +108,13 @@ public class AgendaView {
         ComboBox<Modalidade> modalidade = new ComboBox<>();
         modalidade.getItems().setAll(Modalidade.values());
         modalidade.setValue(Modalidade.PRESENCIAL);
-        CheckBox convenio = new CheckBox("Cobrar pelo convenio do paciente");
+        Ui.rotular(modalidade, Modalidade::rotulo);
+        CheckBox convenio = new CheckBox("Cobrar pelo convênio do paciente");
 
         GridPane g = Ui.formulario();
         g.addRow(0, new Label("Paciente"), paciente);
         g.addRow(1, new Label("Profissional"), prof);
-        g.addRow(2, new Label("Servico"), servico);
+        g.addRow(2, new Label("Serviço"), servico);
         g.addRow(3, new Label("Data"), data);
         g.addRow(4, new Label("Hora (HH:mm)"), hora);
         g.addRow(5, new Label("Modalidade"), modalidade);
@@ -124,7 +128,7 @@ public class AgendaView {
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, ev -> {
             boolean ok = Ui.executar(() -> {
                 if (paciente.getValue() == null || prof.getValue() == null || servico.getValue() == null)
-                    throw new br.com.kleber.psigestor.util.RegraNegocioException("Preencha paciente, profissional e servico.");
+                    throw new br.com.kleber.psigestor.util.RegraNegocioException("Preencha paciente, profissional e serviço.");
                 ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
                         montarInicio(data.getValue(), hora.getText()), modalidade.getValue(), convenio.isSelected());
             });
@@ -142,7 +146,7 @@ public class AgendaView {
             if (hora == null) throw new DateTimeParseException("vazio", "", 0);
             return data.atTime(LocalTime.parse(hora.trim()));
         } catch (DateTimeParseException ex) {
-            throw new RegraNegocioException("Hora invalida. Use HH:mm, ex.: 14:30");
+            throw new RegraNegocioException("Hora inválida. Use HH:mm, ex.: 14:30");
         }
     }
 

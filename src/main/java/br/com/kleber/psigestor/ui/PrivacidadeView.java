@@ -26,14 +26,14 @@ public class PrivacidadeView {
 
     /** Tudo o que volta ao estado da data do backup e que costuma surpreender (M-7). */
     static final String AVISO_RESTAURACAO = """
-            Os dados atuais serao SUBSTITUIDOS pelos do backup.
-            Uma copia do banco atual sera mantida na pasta do PsiGestor.
+            Os dados atuais serão SUBSTITUÍDOS pelos do backup.
+            Uma cópia do banco atual será mantida na pasta do PsiGestor.
 
-            Atencao, tudo volta a ser como era na data do backup:
-             - as senhas dos usuarios voltam a ser as vigentes naquela data;
-             - usuarios desativados depois do backup voltam a ficar ATIVOS e conseguem entrar;
+            Atenção, tudo volta a ser como era na data do backup:
+             - as senhas dos usuários voltam a ser as vigentes naquela data;
+             - usuários desativados depois do backup voltam a ficar ATIVOS e conseguem entrar;
              - pacientes anonimizados depois do backup voltam com os dados pessoais.
-            Depois de restaurar, revise a Equipe (desative de novo quem saiu) e refaca as anonimizacoes.
+            Depois de restaurar, revise a Equipe (desative de novo quem saiu) e refaça as anonimizações.
 
             Continuar?""";
 
@@ -45,9 +45,9 @@ public class PrivacidadeView {
         a.setTitle("PsiGestor");
         a.setHeaderText("Backup restaurado");
         a.setContentText("O banco anterior foi guardado SEM criptografia em:\n" + copia
-                + "\n\nEle contem os dados dos pacientes em texto legivel. Guarde-o em local seguro ou apague-o "
-                + "quando tiver certeza de que a restauracao esta correta.\n\n"
-                + "O PsiGestor sera fechado. Abra-o novamente para continuar.");
+                + "\n\nEle contém os dados dos pacientes em texto legível. Guarde-o em local seguro ou apague-o "
+                + "quando tiver certeza de que a restauração está correta.\n\n"
+                + "O PsiGestor será fechado. Abra-o novamente para continuar.");
         ButtonType abrirPasta = new ButtonType("Abrir pasta");
         a.getButtonTypes().setAll(abrirPasta, ButtonType.OK);
         if (a.showAndWait().orElse(ButtonType.OK) == abrirPasta) abrirPasta(copia.getParent());
@@ -59,8 +59,8 @@ public class PrivacidadeView {
         dc.setTitle("Pasta do backup (prefira um pendrive/disco criptografado)");
         File pasta = dc.showDialog(dono);
         if (pasta == null) return false;
-        return SenhaBackupDialog.pedir("Senha do backup", "Minimo de " + AutenticacaoService.SENHA_MINIMA
-                + " caracteres. A senha NAO e guardada: sem ela o backup nao pode ser restaurado. "
+        return SenhaBackupDialog.pedir("Senha do backup", "Mínimo de " + AutenticacaoService.SENHA_MINIMA
+                + " caracteres. A senha NÃO é guardada: sem ela o backup não pode ser restaurado. "
                 + "Anote-a em local seguro, separado do backup.", true)
                 .map(s -> Ui.executar(() -> Ui.info("Backup cifrado salvo em:\n"
                         + ctx.backup.gerar(pasta.toPath(), s.senha(), s.confirmacao()))))
@@ -79,8 +79,8 @@ public class PrivacidadeView {
     public Node criar() {
         TableView<LogAcesso> log = Ui.tabela();
         log.getColumns().add(Ui.col("Data/hora", LogAcesso::dataHora, 150));
-        log.getColumns().add(Ui.col("Usuario", LogAcesso::usuario, 180));
-        log.getColumns().add(Ui.col("Acao", LogAcesso::acao, 220));
+        log.getColumns().add(Ui.col("Usuário", LogAcesso::usuario, 180));
+        log.getColumns().add(Ui.col("Ação", LogAcesso::acao, 220));
         log.getColumns().add(Ui.col("Entidade", LogAcesso::entidade, 110));
         log.getColumns().add(Ui.col("Id", LogAcesso::entidadeId, 60));
         log.getColumns().add(Ui.col("Detalhe", LogAcesso::detalhe, 180));
@@ -112,18 +112,18 @@ public class PrivacidadeView {
         });
 
         Label checklist = new Label("""
-                Checklist rapido (detalhes em docs/PONTOS_DE_ATENCAO_LEGAIS.md):
-                 - Dados de saude sao dados pessoais SENSIVEIS (LGPD art. 5, II e art. 11).
+                Checklist rápido (detalhes em docs/PONTOS_DE_ATENCAO_LEGAIS.md):
+                 - Dados de saúde são dados pessoais SENSÍVEIS (LGPD art. 5º, II e art. 11).
                  - Ative a criptografia de disco do computador (BitLocker no Windows) e use senha forte.
-                 - Faca backup periodico e guarde em local seguro; teste a restauracao.
-                 - Guarde o registro documental por no minimo 5 anos (Res. CFP 01/2009).
-                 - Atendimento online: cadastro no e-Psi (Res. CFP 11/2018) e plataforma segura.
-                 - Incidente de seguranca com risco ao paciente: avaliar comunicacao a ANPD e ao titular (LGPD art. 48).""");
+                 - Faça backup periódico e guarde em local seguro; teste a restauração.
+                 - Guarde o registro documental por no mínimo 5 anos (Res. CFP 01/2009).
+                 - Atendimento on-line: cadastro no e-Psi (Res. CFP 11/2018) e plataforma segura.
+                 - Incidente de segurança com risco ao paciente: avaliar comunicação à ANPD e ao titular (LGPD art. 48).""");
         checklist.setWrapText(true);
         checklist.getStyleClass().add("aviso");
         checklist.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
 
-        return Ui.tela(Ui.titulo("Privacidade & Seguranca"), checklist, Ui.linha(backup, restaurar),
+        return Ui.tela(Ui.titulo("Privacidade & Segurança"), checklist, Ui.linha(backup, restaurar),
                 Ui.titulo("Log de acesso (somente leitura)"), log);
     }
 }

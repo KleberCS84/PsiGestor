@@ -37,7 +37,7 @@ public class PacienteDAO {
             ps.setString(9, p.getNumeroCarteirinha());
             ps.setInt(10, p.isArquivado() ? 1 : 0);
             if (!novo) ps.setInt(11, p.getId());
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente não encontrado.");
             if (novo) p.setId(JdbcUtil.ultimoId(ps));
             return p;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar paciente", e); }
@@ -75,7 +75,7 @@ public class PacienteDAO {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) throw new RegraNegocioException("Paciente nao encontrado.");
+                if (!rs.next()) throw new RegraNegocioException("Paciente não encontrado.");
                 return LocalDate.parse(rs.getString(1).substring(0, 10));
             }
         } catch (SQLException e) { throw new DaoException("Erro ao consultar ultimo atendimento", e); }
@@ -94,7 +94,7 @@ public class PacienteDAO {
              WHERE id = ?""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, id);
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao anonimizar paciente", e); }
     }
 

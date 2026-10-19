@@ -92,8 +92,8 @@ public class Contexto implements AutoCloseable {
     Sessao exigirSessao() {
         // defesa extra: mesmo que o temporizador da tela nao dispare, sessao parada nao serve
         if (sairSeInativo())
-            throw new RegraNegocioException("Sessao expirada por inatividade. Faca login novamente.");
-        if (sessao == null) throw new RegraNegocioException("Faca login para continuar.");
+            throw new RegraNegocioException("Sessão expirada por inatividade. Faça login novamente.");
+        if (sessao == null) throw new RegraNegocioException("Faça login para continuar.");
         return sessao;
     }
 

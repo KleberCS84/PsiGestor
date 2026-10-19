@@ -11,11 +11,13 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -41,6 +43,27 @@ public final class Ui {
         });
         c.setPrefWidth(largura);
         return c;
+    }
+
+    /** ComboBox mostra o rotulo; o valor selecionado continua sendo o proprio item (ex.: o enum). */
+    public static <T> void rotular(ComboBox<T> combo, Function<T, String> rotulo) {
+        combo.setConverter(new StringConverter<>() {
+            @Override public String toString(T item) { return item == null ? "" : rotulo.apply(item); }
+            @Override public T fromString(String texto) {
+                return combo.getItems().stream().filter(i -> rotulo.apply(i).equals(texto)).findFirst().orElse(null);
+            }
+        });
+    }
+
+    /** Formas de pagamento sao gravadas sem acento (AgendaService.FORMAS_PAGAMENTO); aqui so o texto de tela. */
+    private static final Map<String, String> FORMA_PAGAMENTO_TELA = Map.of(
+            "Cartao de debito", "Cartão de débito",
+            "Cartao de credito", "Cartão de crédito",
+            "Transferencia", "Transferência",
+            "Convenio", "Convênio");
+
+    public static String formaPagamento(String gravada) {
+        return gravada == null ? null : FORMA_PAGAMENTO_TELA.getOrDefault(gravada, gravada);
     }
 
     public static <T> TableView<T> tabela() {
@@ -103,8 +126,8 @@ public final class Ui {
         return g;
     }
 
-    public static final String ERRO_GENERICO = "Nao foi possivel concluir a operacao. "
-            + "Os detalhes tecnicos foram registrados no log do sistema.";
+    public static final String ERRO_GENERICO = "Não foi possível concluir a operação. "
+            + "Os detalhes técnicos foram registrados no log do sistema.";
 
     /** Como o erro aparece na tela; os testes trocam por um coletor (sem abrir janela). */
     static Consumer<String> exibirErro = Ui::erro;
@@ -133,7 +156,7 @@ public final class Ui {
     public static void erro(String msg) {
         Alert a = new Alert(Alert.AlertType.WARNING, msg, ButtonType.OK);
         a.setHeaderText(null);
-        a.setTitle("Atencao");
+        a.setTitle("Atenção");
         a.showAndWait();
     }
 

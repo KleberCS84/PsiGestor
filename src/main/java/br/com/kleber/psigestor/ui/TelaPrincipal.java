@@ -31,7 +31,7 @@ public class TelaPrincipal {
         var usuario = ctx.getSessao().usuario();
         Label marca = new Label("PsiGestor");
         marca.getStyleClass().add("menu-marca");
-        Label quem = new Label(usuario.getNome() + "\n" + (usuario.isPsicologo() ? "CRP " + usuario.getCrp() : "Secretaria"));
+        Label quem = new Label(usuario.getNome() + "\n" + (usuario.isPsicologo() ? "CRP " + usuario.getCrp() : usuario.getPapel().rotulo()));
         quem.getStyleClass().add("menu-usuario");
 
         VBox menu = new VBox(4, marca, quem);
@@ -41,9 +41,9 @@ public class TelaPrincipal {
                 item("Painel", () -> new PainelView(ctx).criar()),
                 item("Agenda", () -> new AgendaView(ctx, this).criar()),
                 item("Pacientes", () -> new PacientesView(ctx).criar()),
-                item("Prontuario", () -> new ProntuarioView(ctx, null).criar()),
+                item("Prontuário", () -> new ProntuarioView(ctx, null).criar()),
                 item("Financeiro", () -> new FinanceiroView(ctx).criar()),
-                item("Servicos & Convenios", () -> new CadastrosView(ctx).criar()),
+                item("Serviços & Convênios", () -> new CadastrosView(ctx).criar()),
                 item("Equipe & Repasse", () -> new EquipeView(ctx).criar()),
                 item("Privacidade (LGPD)", () -> new PrivacidadeView(ctx).criar()));
         Button trocarSenha = new Button("Trocar senha");

@@ -509,7 +509,7 @@ class PsiGestorTest {
         ctx.sair();
         RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.cadastrar(
                 "Outra Ana", "ana", "senhaForte12".toCharArray(), Papel.SECRETARIA, null, 0));
-        assertFalse(e.getMessage().contains("Ja existe"), e.getMessage());
+        assertFalse(e.getMessage().contains("Já existe"), e.getMessage());
     }
 
     /** B9: % e _ digitados na busca sao texto literal, nao curinga. */
@@ -819,7 +819,7 @@ class PsiGestorTest {
         assertEquals(10_000_000, teto);
         RegraNegocioException e = assertThrows(RegraNegocioException.class,
                 () -> ctx.cadastros.salvarServico(new Servico("Caro", null, 50, teto + 1)));
-        assertEquals("O valor maximo e R$ 100.000,00.", e.getMessage());
+        assertEquals("O valor máximo é R$ 100.000,00.", e.getMessage());
         assertThrows(RegraNegocioException.class,
                 () -> ctx.cadastros.salvarConvenio(new Convenio("Caro", null, teto + 1, 30)));
         assertDoesNotThrow(() -> ctx.cadastros.salvarServico(new Servico("No teto", null, 50, teto)));
@@ -1245,7 +1245,7 @@ class PsiGestorTest {
         assertEquals(3, lista.size());
         assertEquals(ProntuarioService.ilegivel(ruim),
                 lista.stream().filter(e -> e.id() == ruim).findFirst().orElseThrow().texto());
-        assertEquals("[registro ilegivel #" + ruim + "]", ProntuarioService.ilegivel(ruim));
+        assertEquals("[registro ilegível #" + ruim + "]", ProntuarioService.ilegivel(ruim));
         assertTrue(lista.stream().anyMatch(e -> e.texto().equals("Registro bom 1")));
         assertTrue(lista.stream().anyMatch(e -> e.texto().equals("Registro bom 2")));
 
@@ -1288,7 +1288,7 @@ class PsiGestorTest {
         Paciente p = new Paciente("Maria", null, null);
         p.setConvenioId(999);
         RegraNegocioException e = assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.salvar(p));
-        assertEquals("Convenio nao encontrado.", e.getMessage());
+        assertEquals("Convênio não encontrado.", e.getMessage());
         Convenio c = ctx.convenios.salvar(new Convenio("Unimed", null, 9000, 30));
         p.setConvenioId(c.getId());
         assertDoesNotThrow(() -> ctx.pacienteService.salvar(p));
@@ -1355,7 +1355,7 @@ class PsiGestorTest {
 
         RegraNegocioException e = assertThrows(RegraNegocioException.class,
                 () -> recuperar("ana", CodigoRecuperacao.gerar(), NOVA));
-        assertEquals("Login ou codigo de recuperacao invalidos.", e.getMessage());
+        assertEquals("Login ou código de recuperação inválidos.", e.getMessage());
         Usuario depois = ctx.usuarios.buscarPorLogin("ana").orElseThrow();
         assertEquals(antes.getSenhaHash(), depois.getSenhaHash());
         assertArrayEquals(antes.getChaveCifrada(), depois.getChaveCifrada());
@@ -1480,7 +1480,7 @@ class PsiGestorTest {
         for (String login : List.of("bia", "ninguem")) {
             RegraNegocioException e = assertThrows(RegraNegocioException.class,
                     () -> recuperar(login, CodigoRecuperacao.gerar(), NOVA));
-            assertEquals("Login ou codigo de recuperacao invalidos.", e.getMessage());
+            assertEquals("Login ou código de recuperação inválidos.", e.getMessage());
         }
         assertDoesNotThrow(() -> ctx.autenticacao.entrar("bia", "senhaDaBia123".toCharArray()));
     }

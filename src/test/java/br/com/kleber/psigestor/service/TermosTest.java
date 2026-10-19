@@ -123,10 +123,22 @@ class TermosTest {
     @Test
     void textoDosTermosCobreOsPontosObrigatorios() {
         String texto = Termos.texto();
-        assertTrue(texto.contains("\"como esta\""));
-        assertTrue(texto.contains("Backup e responsabilidade do usuario"));
-        assertTrue(texto.contains("nao tem acesso aos dados"));
+        assertTrue(texto.contains("\"como está\""));
+        assertTrue(texto.contains("Backup é responsabilidade do usuário"));
+        assertTrue(texto.contains("não tem acesso aos dados"));
         assertTrue(texto.contains("CFP"));
         assertTrue(texto.contains("MIT"));
+    }
+
+    /** O recurso e lido em UTF-8: acentos nao viram "Ã§" nem "?" (independe do charset padrao da JVM). */
+    @Test
+    void textoDosTermosChegaComAcentosIntactos() {
+        String texto = Termos.texto();
+        assertTrue(texto.contains("ç"), "ç");
+        assertTrue(texto.contains("ã"), "ã");
+        assertTrue(texto.contains("é"), "é");
+        assertTrue(texto.contains("orientação profissional"));
+        assertFalse(texto.contains("Ã"), "texto decodificado com o charset errado");
+        assertFalse(texto.contains("�"), "byte invalido para UTF-8");
     }
 }

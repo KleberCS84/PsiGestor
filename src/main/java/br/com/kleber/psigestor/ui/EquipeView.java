@@ -18,14 +18,14 @@ public class EquipeView {
     public Node criar() {
         tabela.getColumns().add(Ui.col("Nome", Usuario::getNome, 220));
         tabela.getColumns().add(Ui.col("Login", Usuario::getLogin, 120));
-        tabela.getColumns().add(Ui.col("Perfil", Usuario::getPapel, 110));
+        tabela.getColumns().add(Ui.col("Perfil", u -> u.getPapel().rotulo(), 110));
         tabela.getColumns().add(Ui.col("CRP", Usuario::getCrp, 100));
-        tabela.getColumns().add(Ui.col("% retido pela clinica", u -> u.isPsicologo()
+        tabela.getColumns().add(Ui.col("% retido pela clínica", u -> u.isPsicologo()
                 ? String.format("%.1f%%", u.getPercentualRepasseClinica()) : "-", 150));
-        tabela.getColumns().add(Ui.col("Situacao", u -> u.isAtivo() ? "Ativo" : "Inativo", 90));
+        tabela.getColumns().add(Ui.col("Situação", u -> u.isAtivo() ? "Ativo" : "Inativo", 90));
 
         boolean psicologo = ctx.getSessao().usuario().isPsicologo();
-        Button novo = new Button("+ Novo usuario");
+        Button novo = new Button("+ Novo usuário");
         novo.getStyleClass().add("primario");
         novo.setDisable(!psicologo);
         novo.setOnAction(e -> novoUsuario());
@@ -33,35 +33,35 @@ public class EquipeView {
         repasse.setDisable(!psicologo);
         repasse.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
             TextInputDialog d = new TextInputDialog(String.valueOf(u.getPercentualRepasseClinica()));
-            d.setHeaderText("Percentual retido pela clinica sobre as sessoes de " + u.getNome());
+            d.setHeaderText("Percentual retido pela clínica sobre as sessões de " + u.getNome());
             d.showAndWait().ifPresent(t -> Ui.executar(() ->
                     ctx.cadastros.atualizarRepasse(u.getId(), Validadores.numeroBR(t).doubleValue())));
             carregar();
         }));
         // revoga o acesso de quem saiu da clinica; o cadastro fica (historico, prontuario e log)
-        Button desativar = new Button("Desativar usuario");
+        Button desativar = new Button("Desativar usuário");
         desativar.setDisable(!psicologo);
         desativar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
             if (confirmarDesativacao(u)) Ui.executar(() -> ctx.autenticacao.desativar(u.getId()));
             carregar();
         }));
-        Button reativar = new Button("Reativar usuario");
+        Button reativar = new Button("Reativar usuário");
         reativar.setDisable(!psicologo);
         reativar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(u -> {
-            if (Ui.confirmar("Reativar " + u.getNome() + "? O usuario volta a entrar com a senha que ja tinha."))
+            if (Ui.confirmar("Reativar " + u.getNome() + "? O usuário volta a entrar com a senha que já tinha."))
                 Ui.executar(() -> ctx.autenticacao.reativar(u.getId()));
             carregar();
         }));
         // secretaria nao tem chave de prontuario: a senha dela pode ser definida por um psicologo
-        Button redefinir = new Button("Redefinir senha (secretaria)");
+        Button redefinir = new Button("Redefinir senha (secretário/a)");
         redefinir.setDisable(!psicologo);
         redefinir.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::redefinirSenha));
         carregar();
         return Ui.tela(Ui.titulo("Equipe & Regras de repasse"), tabela,
                 Ui.linha(novo, repasse, desativar, reativar, redefinir),
-                Ui.aviso("Cada psicologo tem login proprio e so le os proprios registros de prontuario. "
-                        + "A secretaria agenda e cuida do financeiro, mas nao acessa o prontuario. "
-                        + "Contratos de repasse/sublocacao de sala devem estar formalizados por escrito."));
+                Ui.aviso("Cada psicólogo tem login próprio e só lê os próprios registros de prontuário. "
+                        + "A secretária agenda e cuida do financeiro, mas não acessa o prontuário. "
+                        + "Contratos de repasse/sublocação de sala devem estar formalizados por escrito."));
     }
 
     /**
@@ -70,7 +70,7 @@ public class EquipeView {
      */
     private void redefinirSenha(Usuario u) {
         if (u.isPsicologo()) {
-            Ui.erro("Psicologo redefine a propria senha com o codigo de recuperacao (\"Esqueci a senha\" no login).");
+            Ui.erro("Psicólogo redefine a própria senha com o código de recuperação (\"Esqueci a senha\" no login).");
             return;
         }
         PasswordField nova = new PasswordField();
@@ -86,7 +86,7 @@ public class EquipeView {
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {
             if (!nova.getText().equals(repetir.getText())) {
-                Ui.erro("As senhas nao conferem.");
+                Ui.erro("As senhas não conferem.");
                 ev.consume();
                 return;
             }
@@ -101,17 +101,17 @@ public class EquipeView {
 
     private boolean confirmarDesativacao(Usuario u) {
         if (!u.isPsicologo())
-            return Ui.confirmar("Desativar " + u.getNome() + "? O usuario nao conseguira mais entrar no sistema.");
+            return Ui.confirmar("Desativar " + u.getNome() + "? O usuário não conseguirá mais entrar no sistema.");
         TextInputDialog d = new TextInputDialog();
-        d.setTitle("Desativar psicologo");
+        d.setTitle("Desativar psicólogo");
         d.setHeaderText("Desativar " + u.getNome() + "?\n"
-                + "Os registros de prontuario dele ficam INACESSIVEIS enquanto estiver desativado:\n"
-                + "so a senha dele abre a chave desses registros, e ninguem mais consegue le-los.\n"
+                + "Os registros de prontuário dele ficam INACESSÍVEIS enquanto estiver desativado:\n"
+                + "só a senha dele abre a chave desses registros, e ninguém mais consegue lê-los.\n"
                 + "Para continuar, digite o login: " + u.getLogin());
         String digitado = d.showAndWait().map(String::strip).orElse(null);
         if (digitado == null) return false;
         if (!digitado.equals(u.getLogin())) {
-            Ui.erro("O login digitado nao confere. Nada foi alterado.");
+            Ui.erro("O login digitado não confere. Nada foi alterado.");
             return false;
         }
         return true;
@@ -126,6 +126,7 @@ public class EquipeView {
         ComboBox<Papel> papel = new ComboBox<>();
         papel.getItems().setAll(Papel.values());
         papel.setValue(Papel.SECRETARIA);
+        Ui.rotular(papel, Papel::rotulo);
         TextField crp = new TextField();
         TextField perc = new TextField("0");
         GridPane g = Ui.formulario();
@@ -133,10 +134,10 @@ public class EquipeView {
         g.addRow(1, new Label("Login"), login);
         g.addRow(2, new Label("Senha inicial"), senha);
         g.addRow(3, new Label("Perfil"), papel);
-        g.addRow(4, new Label("CRP (psicologo)"), crp);
-        g.addRow(5, new Label("% retido pela clinica"), perc);
+        g.addRow(4, new Label("CRP (psicólogo)"), crp);
+        g.addRow(5, new Label("% retido pela clínica"), perc);
         Dialog<ButtonType> d = new Dialog<>();
-        d.setTitle("Novo usuario");
+        d.setTitle("Novo usuário");
         d.getDialogPane().setContent(g);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, ev -> {

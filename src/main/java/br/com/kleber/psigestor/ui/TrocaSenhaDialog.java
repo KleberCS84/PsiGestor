@@ -23,12 +23,12 @@ public class TrocaSenhaDialog {
 
         VBox conteudo = new VBox(8, g);
         if (ctx.getSessao().usuario().isPsicologo()) {
-            Label aviso = Ui.aviso("Seus registros de prontuario continuam legiveis com a nova senha. "
-                    + "Se a senha for perdida, so o codigo de recuperacao devolve o acesso.");
+            Label aviso = Ui.aviso("Seus registros de prontuário continuam legíveis com a nova senha. "
+                    + "Se a senha for perdida, só o código de recuperação devolve o acesso.");
             aviso.setMaxWidth(420);
-            Button novoCodigo = new Button("Gerar novo codigo de recuperacao");
+            Button novoCodigo = new Button("Gerar novo código de recuperação");
             novoCodigo.setOnAction(e -> {
-                if (!Ui.confirmar("Gerar um novo codigo de recuperacao? O codigo anterior deixa de valer.\n"
+                if (!Ui.confirmar("Gerar um novo código de recuperação? O código anterior deixa de valer.\n"
                         + "Usa a senha digitada em \"Senha atual\".")) return;
                 String[] codigo = {null};
                 if (Ui.executar(() -> codigo[0] = ctx.autenticacao.gerarCodigoRecuperacao(atual.getText().toCharArray())))
@@ -47,7 +47,7 @@ public class TrocaSenhaDialog {
         ok.setText("Trocar senha");
         ok.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
             if (!nova.getText().equals(repetir.getText())) {
-                Ui.erro("As novas senhas nao conferem.");
+                Ui.erro("As novas senhas não conferem.");
                 e.consume();
                 return;
             }
@@ -57,7 +57,7 @@ public class TrocaSenhaDialog {
             }
         });
         if (d.showAndWait().filter(b -> b == ButtonType.OK).isPresent())
-            Ui.info("Senha alterada. Use a nova senha no proximo login.");
+            Ui.info("Senha alterada. Use a nova senha no próximo login.");
         atual.clear();
         nova.clear();
         repetir.clear();

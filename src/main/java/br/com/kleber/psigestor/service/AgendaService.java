@@ -32,18 +32,18 @@ public class AgendaService {
         LocalDate hoje = ctx.hoje();
         if (inicio.toLocalDate().isBefore(hoje.minusDays(DIAS_RETROATIVOS))
                 || inicio.toLocalDate().isAfter(hoje.plusYears(ANOS_A_FRENTE)))
-            throw new RegraNegocioException("Data fora do periodo permitido (ate " + DIAS_RETROATIVOS
-                    + " dias atras e " + ANOS_A_FRENTE + " ano a frente).");
+            throw new RegraNegocioException("Data fora do período permitido (até " + DIAS_RETROATIVOS
+                    + " dias atrás e " + ANOS_A_FRENTE + " ano à frente).");
         Paciente paciente = ctx.pacienteService.buscar(pacienteId);
         if (paciente.isAnonimizado())
-            throw new RegraNegocioException("Paciente anonimizado (LGPD): nao pode receber novos agendamentos.");
+            throw new RegraNegocioException("Paciente anonimizado (LGPD): não pode receber novos agendamentos.");
         if (paciente.isArquivado()) throw new RegraNegocioException("Paciente arquivado. Reative o cadastro antes.");
 
         Usuario prof = ctx.usuarios.listarPsicologos().stream()
                 .filter(u -> u.getId() == profissionalId).findFirst()
-                .orElseThrow(() -> new RegraNegocioException("Profissional invalido."));
+                .orElseThrow(() -> new RegraNegocioException("Profissional inválido."));
         Servico servico = ctx.servicos.buscar(servicoId)
-                .orElseThrow(() -> new RegraNegocioException("Servico nao encontrado."));
+                .orElseThrow(() -> new RegraNegocioException("Serviço não encontrado."));
 
         LocalDateTime fim = inicio.plusMinutes(servico.getDuracaoMin());
         verificarConflitos(prof.getId(), prof.getNome(), pacienteId, paciente.getNome(), inicio, fim, null);
@@ -61,10 +61,10 @@ public class AgendaService {
         a.setModalidade(modalidade);
         if (usarConvenio) {
             if (paciente.getConvenioId() == null)
-                throw new RegraNegocioException("Paciente nao possui convenio cadastrado.");
+                throw new RegraNegocioException("Paciente não possui convênio cadastrado.");
             Convenio conv = ctx.convenios.listar().stream()
                     .filter(c -> c.getId().equals(paciente.getConvenioId())).findFirst()
-                    .orElseThrow(() -> new RegraNegocioException("Convenio nao encontrado."));
+                    .orElseThrow(() -> new RegraNegocioException("Convênio não encontrado."));
             a.setConvenioId(conv.getId());
             a.setValorCentavos(conv.getValorSessaoCentavos());
         } else {
@@ -82,13 +82,13 @@ public class AgendaService {
         ctx.exigirSessao();
         if (status == null) throw new RegraNegocioException("Informe o status.");
         Atendimento a = ctx.atendimentos.buscar(atendimentoId)
-                .orElseThrow(() -> new RegraNegocioException("Atendimento nao encontrado."));
+                .orElseThrow(() -> new RegraNegocioException("Atendimento não encontrado."));
         StatusAtendimento anterior = a.getStatus();
         if (!anterior.podeIrPara(status))
-            throw new RegraNegocioException("Nao e possivel mudar de " + anterior + " para " + status + ".");
+            throw new RegraNegocioException("Não é possível mudar de " + anterior.rotulo() + " para " + status.rotulo() + ".");
         // o pagamento ja registrado e de uma sessao realizada: virar falta mudaria o que foi recebido
         if (anterior == StatusAtendimento.REALIZADO && status == StatusAtendimento.FALTOU && a.isPago())
-            throw new RegraNegocioException("Atendimento realizado e pago nao pode ser marcado como falta.");
+            throw new RegraNegocioException("Atendimento realizado e pago não pode ser marcado como falta.");
         // cancelado nao ocupa horario: o espaco pode ter sido reaproveitado enquanto estava cancelado
         if (!anterior.ocupaHorario() && status.ocupaHorario())
             verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), a.getPacienteId(), a.getPacienteNome(),
@@ -97,7 +97,7 @@ public class AgendaService {
             if (status == StatusAtendimento.REALIZADO || status == StatusAtendimento.FALTOU) {
                 // repasse congelado agora: mudar o % depois nao reescreve periodos ja fechados (M-5)
                 double percentual = ctx.usuarios.buscar(a.getProfissionalId())
-                        .orElseThrow(() -> new RegraNegocioException("Profissional nao encontrado."))
+                        .orElseThrow(() -> new RegraNegocioException("Profissional não encontrado."))
                         .getPercentualRepasseClinica();
                 ctx.atendimentos.atualizarStatus(atendimentoId, status, percentual);
             } else {
@@ -110,22 +110,22 @@ public class AgendaService {
     private void verificarConflitos(int profissionalId, String profissionalNome, int pacienteId, String pacienteNome,
                                     LocalDateTime inicio, LocalDateTime fim, Integer ignorarId) {
         if (ctx.atendimentos.contarConflitos(profissionalId, inicio, fim, ignorarId) > 0)
-            throw new RegraNegocioException("Conflito: " + profissionalNome + " ja tem atendimento nesse horario.");
+            throw new RegraNegocioException("Conflito: " + profissionalNome + " já tem atendimento nesse horário.");
         if (ctx.atendimentos.contarConflitosPaciente(pacienteId, inicio, fim, ignorarId) > 0)
-            throw new RegraNegocioException("Conflito: " + pacienteNome + " ja tem atendimento nesse horario.");
+            throw new RegraNegocioException("Conflito: " + pacienteNome + " já tem atendimento nesse horário.");
     }
 
     /** Pagar antes (agendado/confirmado) ou cobrar falta e permitido; cancelado ou ja pago, nao. */
     public void registrarPagamento(int atendimentoId, String forma) {
         ctx.exigirSessao();
         if (forma == null || !FORMAS_PAGAMENTO.contains(forma))
-            throw new RegraNegocioException("Forma de pagamento invalida.");
+            throw new RegraNegocioException("Forma de pagamento inválida.");
         Atendimento a = ctx.atendimentos.buscar(atendimentoId)
-                .orElseThrow(() -> new RegraNegocioException("Atendimento nao encontrado."));
+                .orElseThrow(() -> new RegraNegocioException("Atendimento não encontrado."));
         if (a.getStatus() == StatusAtendimento.CANCELADO)
-            throw new RegraNegocioException("Atendimento cancelado nao pode receber pagamento.");
+            throw new RegraNegocioException("Atendimento cancelado não pode receber pagamento.");
         if (a.isPago())   // sobrescrever apagaria a forma original sem rastro
-            throw new RegraNegocioException("Pagamento ja registrado para este atendimento.");
+            throw new RegraNegocioException("Pagamento já registrado para este atendimento.");
         ctx.transacao(() -> {
             ctx.atendimentos.registrarPagamento(atendimentoId, forma);
             ctx.auditar("PAGAMENTO", "atendimento", atendimentoId);

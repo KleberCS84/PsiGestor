@@ -24,7 +24,7 @@ public class ServicoDAO {
             ps.setInt(3, s.getDuracaoMin());
             ps.setLong(4, s.getValorCentavos());
             if (!novo) ps.setInt(5, s.getId());
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Servico nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Serviço não encontrado.");
             if (novo) s.setId(JdbcUtil.ultimoId(ps));
             return s;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar servico", e); }

@@ -20,10 +20,10 @@ public class RecuperacaoDialog {
         PasswordField repetir = new PasswordField();
         GridPane g = Ui.formulario();
         g.addRow(0, new Label("Login"), login);
-        g.addRow(1, new Label("Codigo de recuperacao"), codigo);
+        g.addRow(1, new Label("Código de recuperação"), codigo);
         g.addRow(2, new Label("Nova senha (min. " + AutenticacaoService.SENHA_MINIMA + ")"), nova);
         g.addRow(3, new Label("Repita a nova senha"), repetir);
-        Label aviso = Ui.aviso("Somente psicologos tem codigo de recuperacao. Secretaria: peca a um psicologo "
+        Label aviso = Ui.aviso("Somente psicólogos têm código de recuperação. Secretária: peça a um psicólogo "
                 + "para redefinir sua senha na tela Equipe.");
         aviso.setMaxWidth(440);
 
@@ -37,7 +37,7 @@ public class RecuperacaoDialog {
         ok.setText("Redefinir senha");
         ok.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
             if (!nova.getText().equals(repetir.getText())) {
-                Ui.erro("As novas senhas nao conferem.");
+                Ui.erro("As novas senhas não conferem.");
                 e.consume();
                 return;
             }
@@ -51,7 +51,7 @@ public class RecuperacaoDialog {
         nova.clear();
         repetir.clear();
         if (novoCodigo[0] != null) {
-            Ui.info("Senha redefinida. O codigo usado deixou de valer: anote o NOVO codigo a seguir "
+            Ui.info("Senha redefinida. O código usado deixou de valer: anote o NOVO código a seguir "
                     + "e depois entre com a nova senha.");
             CodigoRecuperacaoDialog.mostrar(novoCodigo[0]);
         }

@@ -52,7 +52,7 @@ public class TelaLogin {
         esqueci.setOnAction(e -> new RecuperacaoDialog(ctx).mostrar());
         Label marca = new Label("PsiGestor");
         marca.getStyleClass().add("login-marca");
-        VBox v = new VBox(12, marca, new Label("Gestao de consultorio com sigilo por padrao"), login, senha, entrar,
+        VBox v = new VBox(12, marca, new Label("Gestão de consultório com sigilo por padrão"), login, senha, entrar,
                 Ui.linha(esqueci, sobre()));
         v.setAlignment(Pos.CENTER_LEFT);
         return v;
@@ -73,7 +73,7 @@ public class TelaLogin {
         if (Ui.executar(() -> precisa[0] = ctx.autenticacao.precisaAceitarTermos()) && !precisa[0]) return true;
         if (TermosDialog.pedirAceite() && Ui.executar(ctx.autenticacao::aceitarTermos)) return true;
         Ui.executar(ctx::sair);
-        Ui.info("E preciso aceitar os termos de uso para usar o PsiGestor.");
+        Ui.info("É preciso aceitar os termos de uso para usar o PsiGestor.");
         return false;
     }
 
@@ -83,11 +83,11 @@ public class TelaLogin {
         Ui.executar(() -> precisa[0] = ctx.autenticacao.precisaCodigoRecuperacao());
         if (!precisa[0]) return;
         ButtonType gerar = new ButtonType("Gerar agora", ButtonBar.ButtonData.OK_DONE);
-        ButtonType depois = new ButtonType("Lembrar no proximo login", ButtonBar.ButtonData.CANCEL_CLOSE);
-        Alert a = new Alert(Alert.AlertType.WARNING, "Voce ainda nao tem um codigo de recuperacao.\n\n"
-                + "Sem ele, se a senha for esquecida, o seu prontuario nao pode ser lido por ninguem. "
-                + "Gere o codigo agora e guarde-o fora do computador.", gerar, depois);
-        a.setTitle("Codigo de recuperacao");
+        ButtonType depois = new ButtonType("Lembrar no próximo login", ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert a = new Alert(Alert.AlertType.WARNING, "Você ainda não tem um código de recuperação.\n\n"
+                + "Sem ele, se a senha for esquecida, o seu prontuário não pode ser lido por ninguém. "
+                + "Gere o código agora e guarde-o fora do computador.", gerar, depois);
+        a.setTitle("Código de recuperação");
         a.setHeaderText(null);
         if (a.showAndWait().filter(b -> b == gerar).isEmpty()) return;
         String[] codigo = {null};
@@ -102,8 +102,8 @@ public class TelaLogin {
         TextField login = new TextField();
         PasswordField senha = new PasswordField();
         PasswordField senha2 = new PasswordField();
-        CheckBox ciente = new CheckBox("Entendo que o prontuario e cifrado com a minha senha:\n"
-                + "se eu perder a senha E o codigo de recuperacao, os registros nao podem ser recuperados.");
+        CheckBox ciente = new CheckBox("Entendo que o prontuário é cifrado com a minha senha:\n"
+                + "se eu perder a senha E o código de recuperação, os registros não podem ser recuperados.");
         ciente.setWrapText(true);
         ciente.setMaxWidth(390);
         ciente.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
@@ -113,14 +113,14 @@ public class TelaLogin {
         g.addRow(2, new Label("Login"), login);
         g.addRow(3, new Label("Senha (min. " + AutenticacaoService.SENHA_MINIMA + ")"), senha);
         g.addRow(4, new Label("Repita a senha"), senha2);
-        Button criar = new Button("Criar conta do psicologo responsavel");
+        Button criar = new Button("Criar conta do psicólogo responsável");
         criar.getStyleClass().add("primario");
         criar.setOnAction(e -> {
-            if (!senha.getText().equals(senha2.getText())) { Ui.erro("As senhas nao conferem."); return; }
-            if (!ciente.isSelected()) { Ui.erro("Marque a ciencia sobre a senha do prontuario."); return; }
+            if (!senha.getText().equals(senha2.getText())) { Ui.erro("As senhas não conferem."); return; }
+            if (!ciente.isSelected()) { Ui.erro("Marque a ciência sobre a senha do prontuário."); return; }
             // termos antes de criar a conta: recusou, nada fica gravado
             if (!TermosDialog.pedirAceite()) {
-                Ui.info("E preciso aceitar os termos de uso para usar o PsiGestor.");
+                Ui.info("É preciso aceitar os termos de uso para usar o PsiGestor.");
                 return;
             }
             String s = senha.getText();
@@ -142,7 +142,7 @@ public class TelaLogin {
         });
         Label marca = new Label("Bem-vindo ao PsiGestor");
         marca.getStyleClass().add("login-marca");
-        return new VBox(10, marca, new Label("Primeiro acesso: cadastre o psicologo responsavel."), g, ciente, criar,
+        return new VBox(10, marca, new Label("Primeiro acesso: cadastre o psicólogo responsável."), g, ciente, criar,
                 sobre());
     }
 }

@@ -56,10 +56,10 @@ public final class Validadores {
         if (VIRGULA_DECIMAL.matcher(t).matches()) return new BigDecimal(t.replace(",", "."));
         if (COM_MILHAR.matcher(t).matches()) {
             if (!t.contains(",") && t.indexOf('.') == t.lastIndexOf('.'))
-                throw new RegraNegocioException("Valor ambiguo: " + s + ". Use virgula para decimais (ex.: 1.234,00).");
+                throw new RegraNegocioException("Valor ambíguo: " + s + ". Use vírgula para decimais (ex.: 1.234,00).");
             return new BigDecimal(t.replace(".", "").replace(",", "."));
         }
-        throw new RegraNegocioException("Valor invalido: " + s);
+        throw new RegraNegocioException("Valor inválido: " + s);
     }
 
     /**

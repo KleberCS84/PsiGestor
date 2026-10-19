@@ -22,7 +22,7 @@ public class PacienteService {
     private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
-    static final String ANONIMIZADO = "Paciente anonimizado (LGPD): o cadastro nao pode ser alterado nem reativado.";
+    static final String ANONIMIZADO = "Paciente anonimizado (LGPD): o cadastro não pode ser alterado nem reativado.";
     /** Guarda minima do registro documental (Res. CFP 01/2009) antes de anonimizar. */
     static final int GUARDA_MINIMA_ANOS = 5;
     static final int NOME_MAX = 120;
@@ -43,39 +43,39 @@ public class PacienteService {
         // confere no banco: a tela edita uma copia, que pode nao trazer anonimizado_em
         if (p.getId() != null && buscar(p.getId()).isAnonimizado())
             throw new RegraNegocioException(ANONIMIZADO);
-        if (Validadores.vazio(p.getNome())) throw new RegraNegocioException("Nome do paciente e obrigatorio.");
+        if (Validadores.vazio(p.getNome())) throw new RegraNegocioException("Nome do paciente é obrigatório.");
         p.setNome(limitar(p.getNome(), NOME_MAX, "Nome"));
         p.setTelefone(opcional(p.getTelefone(), TELEFONE_MAX, "Telefone"));
         p.setEmail(opcional(p.getEmail(), EMAIL_MAX, "E-mail"));
-        p.setContatoEmergencia(opcional(p.getContatoEmergencia(), CONTATO_MAX, "Contato de emergencia"));
-        p.setResponsavelLegal(opcional(p.getResponsavelLegal(), RESPONSAVEL_MAX, "Responsavel legal"));
-        p.setNumeroCarteirinha(opcional(p.getNumeroCarteirinha(), CARTEIRINHA_MAX, "N. carteirinha"));
+        p.setContatoEmergencia(opcional(p.getContatoEmergencia(), CONTATO_MAX, "Contato de emergência"));
+        p.setResponsavelLegal(opcional(p.getResponsavelLegal(), RESPONSAVEL_MAX, "Responsável legal"));
+        p.setNumeroCarteirinha(opcional(p.getNumeroCarteirinha(), CARTEIRINHA_MAX, "Nº da carteirinha"));
         if (p.getTelefone() != null && !Validadores.telefoneValido(p.getTelefone()))
-            throw new RegraNegocioException("Telefone invalido. Informe DDD + numero, ex.: (62) 99999-0000.");
+            throw new RegraNegocioException("Telefone inválido. Informe DDD + número, ex.: (62) 99999-0000.");
 
         // Minimizacao (LGPD art. 6, III): CPF e opcional; se informado, precisa ser valido e unico.
         if (Validadores.vazio(p.getCpf())) {
             p.setCpf(null);
         } else {
-            if (!Validadores.cpfValido(p.getCpf())) throw new RegraNegocioException("CPF invalido.");
+            if (!Validadores.cpfValido(p.getCpf())) throw new RegraNegocioException("CPF inválido.");
             p.setCpf(Validadores.somenteDigitos(p.getCpf()));
             if (ctx.pacientes.cpfEmUso(p.getCpf(), p.getId()))
-                throw new RegraNegocioException("Ja existe paciente com esse CPF.");
+                throw new RegraNegocioException("Já existe paciente com esse CPF.");
         }
         LocalDate hoje = ctx.hoje();
         if (p.getDataNascimento() != null && p.getDataNascimento().isAfter(hoje))
             throw new RegraNegocioException("Data de nascimento no futuro.");
         if (p.getDataNascimento() != null && p.getDataNascimento().isBefore(hoje.minusYears(IDADE_MAXIMA)))
-            throw new RegraNegocioException("Data de nascimento invalida (mais de " + IDADE_MAXIMA + " anos).");
+            throw new RegraNegocioException("Data de nascimento inválida (mais de " + IDADE_MAXIMA + " anos).");
         // Menor de idade: atendimento depende de autorizacao do responsavel (ECA / Codigo de Etica, art. 8).
         if (p.isMenorDeIdade(hoje) && Validadores.vazio(p.getResponsavelLegal()))
-            throw new RegraNegocioException("Paciente menor de 18 anos: informe o responsavel legal.");
+            throw new RegraNegocioException("Paciente menor de 18 anos: informe o responsável legal.");
         if (p.getEmail() != null && !p.getEmail().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
-            throw new RegraNegocioException("E-mail invalido.");
+            throw new RegraNegocioException("E-mail inválido.");
         // mensagem clara em vez do erro de FK do banco
         if (p.getConvenioId() != null
                 && ctx.convenios.listar().stream().noneMatch(c -> c.getId().equals(p.getConvenioId())))
-            throw new RegraNegocioException("Convenio nao encontrado.");
+            throw new RegraNegocioException("Convênio não encontrado.");
 
         boolean novo = p.getId() == null;
         try {
@@ -94,7 +94,7 @@ public class PacienteService {
     private static String limitar(String valor, int maximo, String campo) {
         String v = valor.strip();
         if (v.length() > maximo)
-            throw new RegraNegocioException(campo + ": maximo de " + maximo + " caracteres.");
+            throw new RegraNegocioException(campo + ": máximo de " + maximo + " caracteres.");
         return v;
     }
 
@@ -125,12 +125,12 @@ public class PacienteService {
      */
     public void anonimizarPaciente(int pacienteId) {
         if (!ctx.exigirSessao().usuario().isPsicologo())
-            throw new RegraNegocioException("Somente psicologos podem anonimizar pacientes.");
-        if (buscar(pacienteId).isAnonimizado()) throw new RegraNegocioException("Paciente ja foi anonimizado.");
+            throw new RegraNegocioException("Somente psicólogos podem anonimizar pacientes.");
+        if (buscar(pacienteId).isAnonimizado()) throw new RegraNegocioException("Paciente já foi anonimizado.");
         LocalDate permitidoApos = ctx.pacientes.ultimaReferencia(pacienteId).plusYears(GUARDA_MINIMA_ANOS);
         if (!permitidoApos.isBefore(ctx.hoje()))
-            throw new RegraNegocioException("Anonimizacao so e permitida " + GUARDA_MINIMA_ANOS
-                    + " anos apos o ultimo atendimento (a partir de " + permitidoApos.plusDays(1).format(DATA) + ").");
+            throw new RegraNegocioException("Anonimização só é permitida " + GUARDA_MINIMA_ANOS
+                    + " anos após o último atendimento (a partir de " + permitidoApos.plusDays(1).format(DATA) + ").");
         ctx.transacao(() -> {
             ctx.pacientes.anonimizar(pacienteId);
             ctx.auditar("ANONIMIZACAO_PACIENTE", "paciente", pacienteId);
@@ -139,7 +139,7 @@ public class PacienteService {
 
     public Paciente buscar(int id) {
         ctx.exigirSessao();
-        return ctx.pacientes.buscar(id).orElseThrow(() -> new RegraNegocioException("Paciente nao encontrado."));
+        return ctx.pacientes.buscar(id).orElseThrow(() -> new RegraNegocioException("Paciente não encontrado."));
     }
 
     public List<Paciente> pesquisar(String nome, boolean incluirArquivados) {
@@ -180,10 +180,10 @@ public class PacienteService {
      */
     public Path exportarDadosDoTitular(int pacienteId, Path pasta) {
         if (!ctx.exigirSessao().usuario().isPsicologo())
-            throw new RegraNegocioException("Exportacao de dados do titular restrita ao psicologo.");
+            throw new RegraNegocioException("Exportação de dados do titular restrita ao psicólogo.");
         Paciente p = buscar(pacienteId);
         StringBuilder sb = new StringBuilder();
-        sb.append("RELATORIO DE DADOS PESSOAIS - LGPD art. 18\n");
+        sb.append("RELATÓRIO DE DADOS PESSOAIS - LGPD art. 18\n");
         sb.append("Gerado em: ").append(LocalDateTime.now().format(BR)).append("\n\n");
         sb.append("== Dados cadastrais ==\n");
         sb.append("Nome: ").append(p.getNome()).append('\n');
@@ -191,8 +191,8 @@ public class PacienteService {
         sb.append("Nascimento: ").append(p.getDataNascimento() == null ? "-" : p.getDataNascimento()).append('\n');
         sb.append("Telefone: ").append(nvl(p.getTelefone())).append('\n');
         sb.append("E-mail: ").append(nvl(p.getEmail())).append('\n');
-        sb.append("Contato de emergencia: ").append(nvl(p.getContatoEmergencia())).append('\n');
-        sb.append("Responsavel legal: ").append(nvl(p.getResponsavelLegal())).append("\n\n");
+        sb.append("Contato de emergência: ").append(nvl(p.getContatoEmergencia())).append('\n');
+        sb.append("Responsável legal: ").append(nvl(p.getResponsavelLegal())).append("\n\n");
         sb.append("== Consentimentos (mais recente primeiro) ==\n");
         for (Consentimento c : consentimentos(pacienteId)) {
             sb.append(c.registradoEm().format(BR)).append(" | ").append(c.tipo().getDescricao())
@@ -201,7 +201,7 @@ public class PacienteService {
         sb.append("\n== Atendimentos ==\n");
         for (Atendimento a : ctx.atendimentos.listarPorPaciente(pacienteId)) {
             sb.append(a.getInicio().format(BR)).append(" | ").append(a.getServicoNome())
-              .append(" | ").append(a.getStatus()).append(" | ").append(a.getModalidade()).append('\n');
+              .append(" | ").append(a.getStatus().rotulo()).append(" | ").append(a.getModalidade().rotulo()).append('\n');
         }
         try {
             Files.createDirectories(pasta);
@@ -219,9 +219,9 @@ public class PacienteService {
             });
             return arq;
         } catch (IOException e) {
-            throw new RegraNegocioException("Nao foi possivel gravar o arquivo: " + e.getMessage());
+            throw new RegraNegocioException("Não foi possível gravar o arquivo: " + e.getMessage());
         } catch (UncheckedIOException e) {
-            throw new RegraNegocioException("Nao foi possivel gravar o arquivo: " + e.getCause().getMessage());
+            throw new RegraNegocioException("Não foi possível gravar o arquivo: " + e.getCause().getMessage());
         }
     }
 

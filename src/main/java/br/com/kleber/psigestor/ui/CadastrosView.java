@@ -17,16 +17,16 @@ public class CadastrosView {
     public CadastrosView(Contexto ctx) { this.ctx = ctx; }
 
     public Node criar() {
-        servicos.getColumns().add(Ui.col("Servico", Servico::getNome, 260));
-        servicos.getColumns().add(Ui.col("Codigo TUSS", Servico::getCodigoTuss, 120));
-        servicos.getColumns().add(Ui.col("Duracao", s -> s.getDuracaoMin() + " min", 90));
+        servicos.getColumns().add(Ui.col("Serviço", Servico::getNome, 260));
+        servicos.getColumns().add(Ui.col("Código TUSS", Servico::getCodigoTuss, 120));
+        servicos.getColumns().add(Ui.col("Duração", s -> s.getDuracaoMin() + " min", 90));
         servicos.getColumns().add(Ui.col("Valor particular", s -> Ui.moeda(s.getValorCentavos()), 130));
         servicos.setPrefHeight(200);
 
         TextField sNome = new TextField();
         sNome.setPromptText("Nome (ex.: Psicoterapia individual)");
         TextField sTuss = new TextField();
-        sTuss.setPromptText("Cod. TUSS (opcional)");
+        sTuss.setPromptText("Cód. TUSS (opcional)");
         TextField sDur = new TextField("50");
         sDur.setPrefWidth(60);
         TextField sValor = new TextField();
@@ -34,7 +34,7 @@ public class CadastrosView {
         sValor.setPrefWidth(90);
         // valores definem o que e cobrado: so o psicologo altera (regra garantida no CadastroService)
         boolean psicologo = ctx.getSessao().usuario().isPsicologo();
-        Button addServ = new Button("Adicionar servico");
+        Button addServ = new Button("Adicionar serviço");
         addServ.getStyleClass().add("primario");
         addServ.setDisable(!psicologo);
         addServ.setOnAction(e -> {
@@ -44,22 +44,22 @@ public class CadastrosView {
             })) { sNome.clear(); sTuss.clear(); sValor.clear(); carregar(); }
         });
 
-        convenios.getColumns().add(Ui.col("Convenio", Convenio::getNome, 240));
+        convenios.getColumns().add(Ui.col("Convênio", Convenio::getNome, 240));
         convenios.getColumns().add(Ui.col("Registro ANS", Convenio::getRegistroAns, 120));
-        convenios.getColumns().add(Ui.col("Valor por sessao", c -> Ui.moeda(c.getValorSessaoCentavos()), 130));
+        convenios.getColumns().add(Ui.col("Valor por sessão", c -> Ui.moeda(c.getValorSessaoCentavos()), 130));
         convenios.getColumns().add(Ui.col("Prazo pagto.", c -> c.getPrazoPagamentoDias() + " dias", 110));
         convenios.setPrefHeight(200);
 
         TextField cNome = new TextField();
-        cNome.setPromptText("Nome do convenio");
+        cNome.setPromptText("Nome do convênio");
         TextField cAns = new TextField();
         cAns.setPromptText("Registro ANS");
         TextField cValor = new TextField();
-        cValor.setPromptText("Valor sessao");
+        cValor.setPromptText("Valor sessão");
         cValor.setPrefWidth(100);
         TextField cPrazo = new TextField("30");
         cPrazo.setPrefWidth(60);
-        Button addConv = new Button("Adicionar convenio");
+        Button addConv = new Button("Adicionar convênio");
         addConv.getStyleClass().add("primario");
         addConv.setDisable(!psicologo);
         addConv.setOnAction(e -> {
@@ -70,15 +70,15 @@ public class CadastrosView {
         });
 
         carregar();
-        return Ui.tela(Ui.titulo("Servicos"), servicos,
+        return Ui.tela(Ui.titulo("Serviços"), servicos,
                 Ui.linha(sNome, sTuss, new Label("min"), sDur, sValor, addServ),
-                Ui.aviso("Codigo TUSS: copie o codigo do procedimento da tabela TUSS publicada pela ANS ou do "
-                        + "contrato com a operadora. O sistema nao embute tabelas de terceiros (algumas, como a "
-                        + "CBHPM, tem direitos autorais)."),
-                Ui.titulo("Convenios"), convenios,
+                Ui.aviso("Código TUSS: copie o código do procedimento da tabela TUSS publicada pela ANS ou do "
+                        + "contrato com a operadora. O sistema não embute tabelas de terceiros (algumas, como a "
+                        + "CBHPM, têm direitos autorais)."),
+                Ui.titulo("Convênios"), convenios,
                 Ui.linha(cNome, cAns, cValor, new Label("prazo (dias)"), cPrazo, addConv),
-                Ui.aviso("Faturamento eletronico no padrao TISS (XML para operadoras) fica fora do MVP: "
-                        + "exige seguir a versao vigente do padrao da ANS e homologacao com cada operadora."));
+                Ui.aviso("Faturamento eletrônico no padrão TISS (XML para operadoras) fica fora do MVP: "
+                        + "exige seguir a versão vigente do padrão da ANS e homologação com cada operadora."));
     }
 
     private void carregar() {
@@ -90,7 +90,7 @@ public class CadastrosView {
 
     static int inteiro(String s) {
         try { return Integer.parseInt(s.trim()); }
-        catch (NumberFormatException e) { throw new RegraNegocioException("Numero invalido: " + s); }
+        catch (NumberFormatException e) { throw new RegraNegocioException("Número inválido: " + s); }
     }
 
     private static String vazioParaNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }

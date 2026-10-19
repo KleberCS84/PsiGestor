@@ -22,9 +22,9 @@ public class ProntuarioView {
 
     public Node criar() {
         if (!ctx.getSessao().podeLerProntuario()) {
-            return Ui.tela(Ui.titulo("Prontuario"), Ui.aviso(
-                    "Acesso restrito ao psicologo. O conteudo do prontuario e sigiloso (Codigo de Etica "
-                    + "Profissional do Psicologo, art. 9) e fica cifrado com a chave pessoal do profissional."));
+            return Ui.tela(Ui.titulo("Prontuário"), Ui.aviso(
+                    "Acesso restrito ao psicólogo. O conteúdo do prontuário é sigiloso (Código de Ética "
+                    + "Profissional do Psicólogo, art. 9º) e fica cifrado com a chave pessoal do profissional."));
         }
         Ui.executar(() -> paciente.getItems().setAll(ctx.pacienteService.pesquisar("", true)));
         paciente.setPromptText("Escolha o paciente");
@@ -48,14 +48,14 @@ public class ProntuarioView {
         });
         VBox.setVgrow(registros, Priority.ALWAYS);
 
-        texto.setPromptText("Evolucao da sessao: demanda, procedimentos/tecnicas, evolucao, encaminhamentos...");
+        texto.setPromptText("Evolução da sessão: demanda, procedimentos/técnicas, evolução, encaminhamentos...");
         texto.setPrefRowCount(5);
         texto.setWrapText(true);
         Button salvar = new Button("Salvar registro");
         salvar.getStyleClass().add("primario");
         salvar.setOnAction(e -> {
             if (paciente.getValue() == null) { Ui.erro("Escolha o paciente."); return; }
-            if (!Ui.confirmar("Depois de salvo o registro NAO pode ser editado nem apagado, apenas retificado. Salvar?")) return;
+            if (!Ui.confirmar("Depois de salvo o registro NÃO pode ser editado nem apagado, apenas retificado. Salvar?")) return;
             if (Ui.executar(() -> ctx.prontuario.registrar(paciente.getValue().getId(), null, texto.getText()))) {
                 texto.clear();
                 carregar();
@@ -65,14 +65,14 @@ public class ProntuarioView {
         retificar.setOnAction(e -> retificar());
 
         carregar();
-        return Ui.tela(Ui.titulo("Prontuario / Registro documental"),
+        return Ui.tela(Ui.titulo("Prontuário / Registro documental"),
                 Ui.linha(new Label("Paciente:"), paciente),
                 registros,
                 new Label("Novo registro"), texto,
                 Ui.linha(salvar, retificar),
-                Ui.aviso("Registros sao cifrados (AES-256) com a sua senha e ficam registrados no log de acesso. "
-                        + "Registre so o necessario para a continuidade do cuidado (Res. CFP 01/2009). "
-                        + "Correcoes geram um novo registro de retificacao, mantendo o original."));
+                Ui.aviso("Registros são cifrados (AES-256) com a sua senha e ficam registrados no log de acesso. "
+                        + "Registre só o necessário para a continuidade do cuidado (Res. CFP 01/2009). "
+                        + "Correções geram um novo registro de retificação, mantendo o original."));
     }
 
     private void carregar() {
@@ -84,8 +84,8 @@ public class ProntuarioView {
         Evolucao ev = registros.getSelectionModel().getSelectedItem();
         if (ev == null) { Ui.erro("Selecione o registro a retificar."); return; }
         TextInputDialog d = new TextInputDialog();
-        d.setTitle("Retificacao do registro #" + ev.id());
-        d.setHeaderText("Descreva a correcao (o registro original sera mantido).");
+        d.setTitle("Retificação do registro #" + ev.id());
+        d.setHeaderText("Descreva a correção (o registro original será mantido).");
         d.showAndWait().ifPresent(t -> {
             Ui.executar(() -> ctx.prontuario.retificar(ev.pacienteId(), ev.id(), t));
             carregar();

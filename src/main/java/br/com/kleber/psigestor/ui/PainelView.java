@@ -28,7 +28,7 @@ public class PainelView {
         VBox tela = Ui.tela(Ui.titulo("Resumo de hoje"), new Label(hoje.format(Ui.DATA)));
         Ui.executar(() -> lembrarBackup(tela));
         if (!Ui.executar(() -> preencher(tela, hoje)))
-            tela.getChildren().add(Ui.aviso("Nao foi possivel carregar o resumo. Abra o Painel novamente."));
+            tela.getChildren().add(Ui.aviso("Não foi possível carregar o resumo. Abra o Painel novamente."));
         return tela;
     }
 
@@ -36,7 +36,7 @@ public class PainelView {
     private void lembrarBackup(VBox tela) {
         if (!ctx.backup.precisaLembrete()) return;
         String quando = ctx.backup.ultimoBackup()
-                .map(d -> "O ultimo backup foi em " + d.format(Ui.DATA) + ".")
+                .map(d -> "O último backup foi em " + d.format(Ui.DATA) + ".")
                 .orElse("Nenhum backup foi feito ainda.");
         Label texto = new Label(quando + " Sem backup, defeito no disco ou perda do computador apaga os dados"
                 + " dos pacientes de forma definitiva.");
@@ -71,15 +71,15 @@ public class PainelView {
         if (!aniversariantes.isEmpty()) {
             tela.getChildren().add(Ui.aviso("Aniversariantes: "
                     + aniversariantes.stream().map(p -> p.getNome()).collect(Collectors.joining(", "))
-                    + ". Mensagens so para quem consentiu contato (aba Pacientes > Consentimentos)."));
+                    + ". Mensagens só para quem consentiu contato (aba Pacientes > Consentimentos)."));
         }
 
         TableView<Atendimento> agenda = Ui.tabela();
         agenda.getColumns().add(Ui.col("Hora", a -> a.getInicio().format(Ui.HORA), 70));
         agenda.getColumns().add(Ui.col("Paciente", Atendimento::getPacienteNome, 220));
         agenda.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 180));
-        agenda.getColumns().add(Ui.col("Modalidade", Atendimento::getModalidade, 100));
-        agenda.getColumns().add(Ui.col("Status", Atendimento::getStatus, 110));
+        agenda.getColumns().add(Ui.col("Modalidade", a -> a.getModalidade().rotulo(), 100));
+        agenda.getColumns().add(Ui.col("Status", a -> a.getStatus().rotulo(), 110));
         agenda.getItems().setAll(doDia);
         agenda.setPrefHeight(220);
         tela.getChildren().addAll(Ui.titulo("Agenda do dia"), agenda);
@@ -89,13 +89,13 @@ public class PainelView {
         FinanceiroService.Resumo r = ctx.financeiro.resumo(ini, hoje.withDayOfMonth(hoje.lengthOfMonth()));
         FlowPane gestao = new FlowPane(14, 14,
                 Ui.card("Pacientes ativos", String.valueOf(ctx.pacienteService.pesquisar("", false).size()), "cor-roxo"),
-                Ui.card("Faturado no mes", Ui.moeda(r.faturado()), "cor-verde"),
+                Ui.card("Faturado no mês", Ui.moeda(r.faturado()), "cor-verde"),
                 Ui.card("A receber", Ui.moeda(r.aReceber()), "cor-laranja"),
                 Ui.card("Taxa de faltas", String.format("%.0f%%", r.taxaFaltas() * 100), "cor-rosa"));
-        tela.getChildren().addAll(Ui.titulo("Gestao do mes"), gestao);
+        tela.getChildren().addAll(Ui.titulo("Gestão do mês"), gestao);
         if (r.recibosPendentes() > 0) {
             tela.getChildren().add(Ui.aviso(r.recibosPendentes()
-                    + " atendimento(s) particular(es) pago(s) sem recibo marcado. Emita no app Receita Saude"
+                    + " atendimento(s) particular(es) pago(s) sem recibo marcado. Emita no app Receita Saúde"
                     + " e depois marque \"Recibo emitido\" na Agenda."));
         }
     }

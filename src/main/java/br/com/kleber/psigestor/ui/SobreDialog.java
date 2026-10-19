@@ -27,9 +27,9 @@ final class SobreDialog {
         Button termos = new Button("Ver termos de uso");
         termos.setOnAction(e -> Ui.executar(TermosDialog::ver));
         VBox corpo = new VBox(8, nome,
-                new Label("Versao " + Versao.atual()),
-                new Label("Gestao de consultorio de psicologia com sigilo por padrao."),
-                new Label("Software livre - Licenca MIT. Fornecido \"como esta\", sem garantia."),
+                new Label("Versão " + Versao.atual()),
+                new Label("Gestão de consultório de psicologia com sigilo por padrão."),
+                new Label("Software livre - Licença MIT. Fornecido \"como está\", sem garantia."),
                 repositorio,
                 new Label("Seus dados ficam em: " + Path.of(System.getProperty("user.home"), "PsiGestor")),
                 termos);

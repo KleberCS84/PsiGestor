@@ -54,19 +54,19 @@ public class AutenticacaoService {
         if (!primeiroAcesso()) {
             var s = ctx.exigirSessao();
             if (!s.usuario().isPsicologo())
-                throw new RegraNegocioException("Somente psicologos podem cadastrar usuarios.");
+                throw new RegraNegocioException("Somente psicólogos podem cadastrar usuários.");
         } else if (papel != Papel.PSICOLOGO) {
-            throw new RegraNegocioException("O primeiro usuario deve ser o psicologo responsavel.");
+            throw new RegraNegocioException("O primeiro usuário deve ser o psicólogo responsável.");
         }
         if (Validadores.vazio(nome) || Validadores.vazio(login))
-            throw new RegraNegocioException("Nome e login sao obrigatorios.");
+            throw new RegraNegocioException("Nome e login são obrigatórios.");
         if (senha == null || senha.length < SENHA_MINIMA)
             throw new RegraNegocioException("A senha deve ter pelo menos " + SENHA_MINIMA + " caracteres.");
         if (papel == Papel.PSICOLOGO && Validadores.vazio(crp))
-            throw new RegraNegocioException("Informe o numero do CRP do psicologo.");
+            throw new RegraNegocioException("Informe o número do CRP do psicólogo.");
         CadastroService.validarPercentual(percentualRepasseClinica);
         if (ctx.usuarios.buscarPorLogin(login.trim()).isPresent())
-            throw new RegraNegocioException("Ja existe um usuario com esse login.");
+            throw new RegraNegocioException("Já existe um usuário com esse login.");
 
         Usuario u = new Usuario(nome.trim(), login.trim(), papel, papel == Papel.PSICOLOGO ? crp.trim() : null);
         u.setIteracoes(Criptografia.ITERACOES_ATUAL);
@@ -110,7 +110,7 @@ public class AutenticacaoService {
             if (u == null || !Criptografia.senhaConfere(senha, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 registrarFalha(chaveTentativa, agora);
                 ctx.logs.registrar(uid, "LOGIN_FALHOU", "usuario", null, detalhe);
-                throw new RegraNegocioException("Login ou senha invalidos."); // mensagem generica de proposito
+                throw new RegraNegocioException("Login ou senha inválidos."); // mensagem generica de proposito
             }
             tentativas.remove(chaveTentativa);
             try {
@@ -154,14 +154,14 @@ public class AutenticacaoService {
     public void desativar(int usuarioId) {
         Sessao s = ctx.exigirSessao();
         if (!s.usuario().isPsicologo())
-            throw new RegraNegocioException("Somente psicologos podem desativar usuarios.");
+            throw new RegraNegocioException("Somente psicólogos podem desativar usuários.");
         if (s.usuario().getId() == usuarioId)
-            throw new RegraNegocioException("Nao e possivel desativar a propria conta. Peca a outro psicologo.");
+            throw new RegraNegocioException("Não é possível desativar a própria conta. Peça a outro psicólogo.");
         Usuario alvo = ctx.usuarios.buscar(usuarioId)
-                .orElseThrow(() -> new RegraNegocioException("Usuario nao encontrado."));
-        if (!alvo.isAtivo()) throw new RegraNegocioException("Usuario ja esta desativado.");
+                .orElseThrow(() -> new RegraNegocioException("Usuário não encontrado."));
+        if (!alvo.isAtivo()) throw new RegraNegocioException("Usuário já está desativado.");
         if (alvo.isPsicologo() && ctx.usuarios.contarPsicologosAtivos() <= 1)
-            throw new RegraNegocioException("Nao e possivel desativar o ultimo psicologo ativo.");
+            throw new RegraNegocioException("Não é possível desativar o último psicólogo ativo.");
         ctx.transacao(() -> {
             ctx.usuarios.desativar(usuarioId);
             ctx.auditar("DESATIVACAO_USUARIO", "usuario", usuarioId);
@@ -178,10 +178,10 @@ public class AutenticacaoService {
     public void reativar(int usuarioId) {
         Sessao s = ctx.exigirSessao();
         if (!s.usuario().isPsicologo())
-            throw new RegraNegocioException("Somente psicologos podem reativar usuarios.");
+            throw new RegraNegocioException("Somente psicólogos podem reativar usuários.");
         Usuario alvo = ctx.usuarios.buscar(usuarioId)
-                .orElseThrow(() -> new RegraNegocioException("Usuario nao encontrado."));
-        if (alvo.isAtivo()) throw new RegraNegocioException("Usuario ja esta ativo.");
+                .orElseThrow(() -> new RegraNegocioException("Usuário não encontrado."));
+        if (alvo.isAtivo()) throw new RegraNegocioException("Usuário já está ativo.");
         ctx.transacao(() -> {
             ctx.usuarios.reativar(usuarioId);
             ctx.auditar("REATIVACAO_USUARIO", "usuario", usuarioId);
@@ -204,7 +204,7 @@ public class AutenticacaoService {
             if (senhaAtual == null
                     || !Criptografia.senhaConfere(senhaAtual, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 ctx.auditar("TROCA_SENHA_FALHOU", "usuario", u.getId());
-                throw new RegraNegocioException("A senha atual nao confere.");
+                throw new RegraNegocioException("A senha atual não confere.");
             }
             SecretKey dek = u.isPsicologo() ? abrirChaveProntuario(u, senhaAtual) : null;
 
@@ -259,12 +259,12 @@ public class AutenticacaoService {
         try {
             Sessao s = ctx.exigirSessao();
             if (!s.usuario().isPsicologo() || s.chaveProntuario() == null)
-                throw new RegraNegocioException("Somente psicologos tem codigo de recuperacao.");
+                throw new RegraNegocioException("Somente psicólogos têm código de recuperação.");
             Usuario u = ctx.usuarios.buscar(s.usuario().getId()).orElseThrow();
             if (senhaAtual == null
                     || !Criptografia.senhaConfere(senhaAtual, u.getSenhaSalt(), u.getSenhaHash(), u.getIteracoes())) {
                 ctx.auditar("RECUPERACAO_FALHOU", "usuario", u.getId());
-                throw new RegraNegocioException("A senha atual nao confere.");
+                throw new RegraNegocioException("A senha atual não confere.");
             }
             String codigo = CodigoRecuperacao.gerar();
             embrulharRecuperacao(u, s.chaveProntuario(), codigo);
@@ -316,7 +316,7 @@ public class AutenticacaoService {
             if (dek == null) {
                 registrarFalha(chaveTentativa, agora);
                 ctx.logs.registrar(uid, "RECUPERACAO_FALHOU", "usuario", null, detalhe);
-                throw new RegraNegocioException("Login ou codigo de recuperacao invalidos.");
+                throw new RegraNegocioException("Login ou código de recuperação inválidos.");
             }
             tentativas.remove(chaveTentativa);
 
@@ -346,12 +346,12 @@ public class AutenticacaoService {
         try {
             Sessao s = ctx.exigirSessao();
             if (!s.usuario().isPsicologo())
-                throw new RegraNegocioException("Somente psicologos podem redefinir senhas.");
+                throw new RegraNegocioException("Somente psicólogos podem redefinir senhas.");
             Usuario alvo = ctx.usuarios.buscar(usuarioId)
-                    .orElseThrow(() -> new RegraNegocioException("Usuario nao encontrado."));
+                    .orElseThrow(() -> new RegraNegocioException("Usuário não encontrado."));
             if (alvo.isPsicologo())
-                throw new RegraNegocioException("A senha de psicologo nao pode ser redefinida por outra pessoa: "
-                        + "ele usa o proprio codigo de recuperacao.");
+                throw new RegraNegocioException("A senha de psicólogo não pode ser redefinida por outra pessoa: "
+                        + "ele usa o próprio código de recuperação.");
             if (novaSenha == null || novaSenha.length < SENHA_MINIMA)
                 throw new RegraNegocioException("A nova senha deve ter pelo menos " + SENHA_MINIMA + " caracteres.");
             alvo.setIteracoes(Criptografia.ITERACOES_ATUAL);

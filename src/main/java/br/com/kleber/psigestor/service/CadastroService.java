@@ -19,8 +19,8 @@ public class CadastroService {
 
     public Servico salvarServico(Servico s) {
         exigirPsicologo();
-        if (Validadores.vazio(s.getNome())) throw new RegraNegocioException("Informe o nome do servico.");
-        if (s.getDuracaoMin() <= 0) throw new RegraNegocioException("A duracao deve ser maior que zero.");
+        if (Validadores.vazio(s.getNome())) throw new RegraNegocioException("Informe o nome do serviço.");
+        if (s.getDuracaoMin() <= 0) throw new RegraNegocioException("A duração deve ser maior que zero.");
         validarValor(s.getValorCentavos());
         boolean novo = s.getId() == null;
         ctx.transacao(() -> {
@@ -32,9 +32,9 @@ public class CadastroService {
 
     public Convenio salvarConvenio(Convenio c) {
         exigirPsicologo();
-        if (Validadores.vazio(c.getNome())) throw new RegraNegocioException("Informe o nome do convenio.");
+        if (Validadores.vazio(c.getNome())) throw new RegraNegocioException("Informe o nome do convênio.");
         validarValor(c.getValorSessaoCentavos());
-        if (c.getPrazoPagamentoDias() < 0) throw new RegraNegocioException("O prazo nao pode ser negativo.");
+        if (c.getPrazoPagamentoDias() < 0) throw new RegraNegocioException("O prazo não pode ser negativo.");
         boolean novo = c.getId() == null;
         ctx.transacao(() -> {
             ctx.convenios.salvar(c);
@@ -56,8 +56,8 @@ public class CadastroService {
     static final long VALOR_MAXIMO_CENTAVOS = 10_000_000;   // R$ 100.000,00
 
     private static void validarValor(long centavos) {
-        if (centavos < 0) throw new RegraNegocioException("O valor nao pode ser negativo.");
-        if (centavos > VALOR_MAXIMO_CENTAVOS) throw new RegraNegocioException("O valor maximo e R$ 100.000,00.");
+        if (centavos < 0) throw new RegraNegocioException("O valor não pode ser negativo.");
+        if (centavos > VALOR_MAXIMO_CENTAVOS) throw new RegraNegocioException("O valor máximo é R$ 100.000,00.");
     }
 
     /** Mesma faixa do CHECK do banco, com mensagem clara (tambem usada no cadastro de usuario). */
@@ -88,6 +88,6 @@ public class CadastroService {
 
     private void exigirPsicologo() {
         if (!ctx.exigirSessao().usuario().isPsicologo())
-            throw new RegraNegocioException("Somente psicologos alteram valores e repasse.");
+            throw new RegraNegocioException("Somente psicólogos alteram valores e repasse.");
     }
 }

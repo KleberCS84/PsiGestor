@@ -23,7 +23,7 @@ public class ConvenioDAO {
             ps.setLong(3, c.getValorSessaoCentavos());
             ps.setInt(4, c.getPrazoPagamentoDias());
             if (!novo) ps.setInt(5, c.getId());
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Convenio nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Convênio não encontrado.");
             if (novo) c.setId(JdbcUtil.ultimoId(ps));
             return c;
         } catch (SQLException e) { throw new DaoException("Erro ao salvar convenio", e); }

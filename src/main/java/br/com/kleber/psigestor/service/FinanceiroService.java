@@ -68,7 +68,7 @@ public class FinanceiroService {
 
     private static void validarPeriodo(LocalDate de, LocalDate ate) {
         if (de == null || ate == null) throw new RegraNegocioException("Informe as datas inicial e final.");
-        if (de.isAfter(ate)) throw new RegraNegocioException("A data inicial deve ser anterior ou igual a final.");
+        if (de.isAfter(ate)) throw new RegraNegocioException("A data inicial deve ser anterior ou igual à final.");
     }
 
     /** Repasse por profissional: a clinica retem o percentual configurado no cadastro do psicologo. */

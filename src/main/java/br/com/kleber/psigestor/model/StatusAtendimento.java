@@ -3,6 +3,17 @@ package br.com.kleber.psigestor.model;
 public enum StatusAtendimento {
     AGENDADO, CONFIRMADO, REALIZADO, FALTOU, CANCELADO;
 
+    /** Texto de tela; o banco guarda name(). */
+    public String rotulo() {
+        return switch (this) {
+            case AGENDADO -> "Agendado";
+            case CONFIRMADO -> "Confirmado";
+            case REALIZADO -> "Realizado";
+            case FALTOU -> "Faltou";
+            case CANCELADO -> "Cancelado";
+        };
+    }
+
     /** Status que ocupam o horario na agenda (usado na checagem de conflito). */
     public boolean ocupaHorario() {
         return this != CANCELADO;

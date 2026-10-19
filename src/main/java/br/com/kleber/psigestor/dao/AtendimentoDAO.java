@@ -152,7 +152,7 @@ public class AtendimentoDAO {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
             // id inexistente: sem isso o service auditaria um evento que nao aconteceu
-            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Atendimento nao encontrado.");
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Atendimento não encontrado.");
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar atendimento", e); }
     }
 }

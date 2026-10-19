@@ -36,8 +36,8 @@ public class PacientesView {
         tabela.getColumns().add(Ui.col("Idade", p -> p.idadeEm(LocalDate.now()), 60));
         tabela.getColumns().add(Ui.col("Telefone", Paciente::getTelefone, 130));
         tabela.getColumns().add(Ui.col("E-mail", Paciente::getEmail, 180));
-        tabela.getColumns().add(Ui.col("Responsavel", Paciente::getResponsavelLegal, 150));
-        tabela.getColumns().add(Ui.col("Situacao", p -> p.isArquivado() ? "Arquivado" : "Ativo", 90));
+        tabela.getColumns().add(Ui.col("Responsável", Paciente::getResponsavelLegal, 150));
+        tabela.getColumns().add(Ui.col("Situação", p -> p.isArquivado() ? "Arquivado" : "Ativo", 90));
         tabela.setRowFactory(t -> {
             TableRow<Paciente> r = new TableRow<>();
             r.setOnMouseClicked(e -> { if (e.getClickCount() == 2 && !r.isEmpty()) formulario(r.getItem()); });
@@ -49,7 +49,7 @@ public class PacientesView {
         Button arquivar = new Button("Arquivar / Reativar");
         arquivar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(p -> {
             String msg = p.isArquivado() ? "Reativar " + p.getNome() + "?"
-                    : "Arquivar " + p.getNome() + "?\nO cadastro e o prontuario sao mantidos (guarda minima de 5 anos).";
+                    : "Arquivar " + p.getNome() + "?\nO cadastro e o prontuário são mantidos (guarda mínima de 5 anos).";
             if (Ui.confirmar(msg)) Ui.executar(() -> ctx.pacienteService.arquivar(p.getId(), !p.isArquivado()));
             carregar();
         }));
@@ -66,7 +66,7 @@ public class PacientesView {
                 Ui.linha(busca, arquivados, Ui.espaco(), novo),
                 tabela,
                 Ui.linha(editar, arquivar, consent, exportar, anonimizar),
-                Ui.aviso("Nao ha botao de excluir: o registro documental deve ser guardado por no minimo 5 anos "
+                Ui.aviso("Não há botão de excluir: o registro documental deve ser guardado por no mínimo 5 anos "
                         + "(Res. CFP 01/2009). Use \"Arquivar\" para tirar o paciente das listas."));
     }
 
@@ -74,14 +74,14 @@ public class PacientesView {
     private void anonimizar(Paciente p) {
         TextInputDialog d = new TextInputDialog();
         d.setTitle("Anonimizar paciente");
-        d.setHeaderText("Esta acao NAO pode ser desfeita.");
-        d.setContentText("Nome, CPF, nascimento, telefone, e-mail e contato de emergencia serao substituidos.\n"
-                + "Atendimentos, financeiro e prontuario sao mantidos.\n\n"
+        d.setHeaderText("Esta ação NÃO pode ser desfeita.");
+        d.setContentText("Nome, CPF, nascimento, telefone, e-mail e contato de emergência serão substituídos.\n"
+                + "Atendimentos, financeiro e prontuário são mantidos.\n\n"
                 + "Digite o nome do paciente para confirmar:");
         String digitado = d.showAndWait().map(String::strip).orElse(null);
         if (digitado == null) return;
         if (!digitado.equals(p.getNome())) {
-            Ui.erro("O nome digitado nao confere. Nada foi alterado.");
+            Ui.erro("O nome digitado não confere. Nada foi alterado.");
             return;
         }
         if (Ui.executar(() -> ctx.pacienteService.anonimizarPaciente(p.getId())))
@@ -102,7 +102,7 @@ public class PacientesView {
         TextField email = new TextField(p.getEmail());
         TextField emerg = new TextField(p.getContatoEmergencia());
         TextField resp = new TextField(p.getResponsavelLegal());
-        resp.setPromptText("obrigatorio se menor de 18");
+        resp.setPromptText("obrigatório se menor de 18");
         ComboBox<Convenio> conv = new ComboBox<>();
         conv.getItems().add(null);
         if (!Ui.executar(() -> conv.getItems().addAll(ctx.cadastros.listarConvenios()))) return;
@@ -117,11 +117,11 @@ public class PacientesView {
         g.addRow(2, new Label("Nascimento"), nasc);
         g.addRow(3, new Label("Telefone"), tel);
         g.addRow(4, new Label("E-mail"), email);
-        g.addRow(5, new Label("Contato de emergencia"), emerg);
-        g.addRow(6, new Label("Responsavel legal"), resp);
-        g.addRow(7, new Label("Convenio"), conv);
-        g.addRow(8, new Label("N. carteirinha"), cart);
-        Label dica = new Label("Colete so o necessario (LGPD art. 6, III - minimizacao).");
+        g.addRow(5, new Label("Contato de emergência"), emerg);
+        g.addRow(6, new Label("Responsável legal"), resp);
+        g.addRow(7, new Label("Convênio"), conv);
+        g.addRow(8, new Label("Nº da carteirinha"), cart);
+        Label dica = new Label("Colete só o necessário (LGPD art. 6º, III - minimização).");
         dica.getStyleClass().add("dica");
         g.add(dica, 0, 9, 2, 1);
 
@@ -165,7 +165,7 @@ public class PacientesView {
         TableView<Consentimento> hist = Ui.tabela();
         hist.getColumns().add(Ui.col("Data", c -> c.registradoEm().format(Ui.DATA_HORA), 130));
         hist.getColumns().add(Ui.col("Tipo", c -> c.tipo().getDescricao(), 260));
-        hist.getColumns().add(Ui.col("Situacao", c -> c.concedido() ? "Concedido" : "Negado/Revogado", 120));
+        hist.getColumns().add(Ui.col("Situação", c -> c.concedido() ? "Concedido" : "Negado/Revogado", 120));
         hist.getColumns().add(Ui.col("Obs.", Consentimento::observacao, 150));
         if (!Ui.executar(() -> hist.getItems().setAll(ctx.pacienteService.consentimentos(p.getId())))) return;
         hist.setPrefSize(680, 220);
@@ -186,7 +186,7 @@ public class PacientesView {
             obs.clear();
         });
         VBox v = new VBox(10, hist, Ui.linha(tipo, concedido), obs, registrar,
-                Ui.aviso("Historico nao e apagado: uma revogacao e um novo registro. Vale o mais recente."));
+                Ui.aviso("Histórico não é apagado: uma revogação é um novo registro. Vale o mais recente."));
         Dialog<ButtonType> d = new Dialog<>();
         d.setTitle("Consentimentos - " + p.getNome());
         d.getDialogPane().setContent(v);
@@ -196,13 +196,13 @@ public class PacientesView {
 
     private void exportar(Paciente p) {
         DirectoryChooser dc = new DirectoryChooser();
-        dc.setTitle("Onde salvar o relatorio de dados do paciente?");
+        dc.setTitle("Onde salvar o relatório de dados do paciente?");
         File pasta = dc.showDialog(tabela.getScene().getWindow());
         if (pasta == null) return;
         Ui.executar(() -> {
             var arq = ctx.pacienteService.exportarDadosDoTitular(p.getId(), pasta.toPath());
-            Ui.info("Arquivo gerado:\n" + arq + "\n\nEntregue somente ao titular (ou responsavel legal).\n"
-                    + "O arquivo NAO e cifrado: apague-o deste computador (e da lixeira) depois de entregar.");
+            Ui.info("Arquivo gerado:\n" + arq + "\n\nEntregue somente ao titular (ou responsável legal).\n"
+                    + "O arquivo NÃO é cifrado: apague-o deste computador (e da lixeira) depois de entregar.");
         });
     }
 

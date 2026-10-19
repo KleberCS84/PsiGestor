@@ -12,6 +12,7 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <javafx.version>21.0.5</javafx.version>
     </properties>
 
@@ -56,6 +57,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.4.0</version>
+                <configuration>
+                    <!-- versao.properties filtrado em UTF-8 (lido assim por util/Versao) -->
+                    <propertiesEncoding>UTF-8</propertiesEncoding>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -129,8 +139,8 @@
                                         <argument>--name</argument><argument>PsiGestor</argument>
                                         <argument>--app-version</argument><argument>${project.version}</argument>
                                         <argument>--vendor</argument><argument>Kleber Souza</argument>
-                                        <argument>--description</argument><argument>Gestao de consultorio de psicologia</argument>
-                                        <argument>--copyright</argument><argument>Licenca MIT</argument>
+                                        <argument>--description</argument><argument>Gestão de consultório de psicologia</argument>
+                                        <argument>--copyright</argument><argument>Licença MIT</argument>
                                         <argument>--input</argument><argument>${jpackage.input}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>br.com.kleber.psigestor.ui.Launcher</argument>
