@@ -243,6 +243,27 @@ public class AutenticacaoService {
         });
     }
 
+    /**
+     * Minutos sem atividade ate o logout automatico, escolhidos pelo proprio usuario.
+     * Nao ha "nunca": computador esquecido logado expoe agenda e prontuario (M1).
+     */
+    public static final List<Integer> OPCOES_INATIVIDADE = List.of(5, 10, 15, 30, 60);
+
+    /** Preferencia do usuario logado; vale ja na sessao atual. Auditada com o valor anterior. */
+    public void alterarInatividade(int minutos) {
+        Sessao s = ctx.exigirSessao();
+        if (!OPCOES_INATIVIDADE.contains(minutos))
+            throw new RegraNegocioException("Escolha 5, 10, 15, 30 ou 60 minutos.");
+        Usuario u = s.usuario();
+        int anterior = u.getMinutosInatividade();
+        if (anterior == minutos) return;
+        ctx.transacao(() -> {
+            ctx.usuarios.atualizarInatividade(u.getId(), minutos);
+            ctx.auditar("PREFERENCIA_ALTERADA", "usuario", u.getId(), "inatividade: " + anterior + " -> " + minutos);
+        });
+        u.setMinutosInatividade(minutos);
+    }
+
     /** Psicologo logado que ainda nao tem codigo de recuperacao (a tela oferece a cada login ate gerar). */
     public boolean precisaCodigoRecuperacao() {
         Sessao s = ctx.exigirSessao();

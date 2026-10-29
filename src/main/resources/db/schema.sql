@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS usuario (
     salt_recuperacao TEXT,                    -- nulos = codigo de recuperacao ainda nao gerado
     iteracoes_recuperacao INTEGER,
     termos_versao   INTEGER NOT NULL DEFAULT 0, -- versao dos termos de uso aceita; 0 = nunca aceitou
-    termos_aceitos_em TEXT                    -- yyyy-MM-ddTHH:mm:ss (hora local) do aceite
+    termos_aceitos_em TEXT,                   -- yyyy-MM-ddTHH:mm:ss (hora local) do aceite
+    minutos_inatividade INTEGER NOT NULL DEFAULT 15
+                    CHECK (minutos_inatividade IN (5,10,15,30,60))  -- logout automatico; sem "nunca" (M1)
 );
 
 CREATE TABLE IF NOT EXISTS convenio (
@@ -83,6 +85,7 @@ CREATE TABLE IF NOT EXISTS atendimento (
     forma_pagamento  TEXT,
     recibo_emitido   INTEGER NOT NULL DEFAULT 0,  -- marcado apos emitir no Receita Saude
     percentual_repasse_clinica REAL,          -- congelado ao virar REALIZADO/FALTOU (repasse nao muda no passado)
+    observacao       TEXT,                    -- administrativa, em claro (nada clinico: isso vai no prontuario)
     CHECK (fim > inicio)
 );
 

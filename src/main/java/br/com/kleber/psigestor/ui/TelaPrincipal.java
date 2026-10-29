@@ -21,6 +21,7 @@ public class TelaPrincipal {
     private final Runnable aoSair;
     private final BorderPane raiz = new BorderPane();
     private final List<Button> botoes = new ArrayList<>();
+    private ProntuarioView prontuario;   // so quando o prontuario e a tela atual
 
     public TelaPrincipal(Contexto ctx, Runnable aoSair) {
         this.ctx = ctx;
@@ -28,7 +29,7 @@ public class TelaPrincipal {
     }
 
     public Parent criar() {
-        var usuario = ctx.getSessao().usuario();
+        var usuario = ctx.usuarioLogado();
         Label marca = new Label("PsiGestor");
         marca.getStyleClass().add("menu-marca");
         Label quem = new Label(usuario.getNome() + "\n" + (usuario.isPsicologo() ? "CRP " + usuario.getCrp() : usuario.getPapel().rotulo()));
@@ -41,7 +42,7 @@ public class TelaPrincipal {
                 item("Painel", () -> new PainelView(ctx).criar()),
                 item("Agenda", () -> new AgendaView(ctx, this).criar()),
                 item("Pacientes", () -> new PacientesView(ctx).criar()),
-                item("Prontuário", () -> new ProntuarioView(ctx, null).criar()),
+                item("Prontuário", () -> abrir(new ProntuarioView(ctx, null))),
                 item("Financeiro", () -> new FinanceiroView(ctx).criar()),
                 item("Serviços & Convênios", () -> new CadastrosView(ctx).criar()),
                 item("Equipe & Repasse", () -> new EquipeView(ctx).criar()),
@@ -49,8 +50,12 @@ public class TelaPrincipal {
         Button trocarSenha = new Button("Trocar senha");
         trocarSenha.getStyleClass().add("menu-item");
         trocarSenha.setMaxWidth(Double.MAX_VALUE);
-        trocarSenha.setOnAction(e -> new TrocaSenhaDialog(ctx).mostrar());
+        trocarSenha.setOnAction(e -> Ui.executar(() -> new TrocaSenhaDialog(ctx).mostrar()));
         VBox.setMargin(trocarSenha, new Insets(20, 0, 0, 0));
+        Button preferencias = new Button("Preferências");
+        preferencias.getStyleClass().add("menu-item");
+        preferencias.setMaxWidth(Double.MAX_VALUE);
+        preferencias.setOnAction(e -> Ui.executar(() -> new PreferenciasDialog(ctx).mostrar()));
         Button sobre = new Button("Sobre");
         sobre.getStyleClass().add("menu-item");
         sobre.setMaxWidth(Double.MAX_VALUE);
@@ -59,7 +64,7 @@ public class TelaPrincipal {
         sair.getStyleClass().add("menu-sair");
         sair.setMaxWidth(Double.MAX_VALUE);
         sair.setOnAction(e -> aoSair.run());
-        menu.getChildren().addAll(trocarSenha, sobre, sair);
+        menu.getChildren().addAll(trocarSenha, preferencias, sobre, sair);
 
         raiz.setLeft(menu);
         botoes.get(0).fire();
@@ -73,11 +78,24 @@ public class TelaPrincipal {
         b.setOnAction(e -> {
             botoes.forEach(x -> x.getStyleClass().remove("ativo"));
             b.getStyleClass().add("ativo");
+            prontuario = null;   // trocou de tela: o texto da tela anterior ja se perdeu
             // criar() de cada tela le o banco: erro ali vira aviso em vez de janela em branco
             Ui.executar(() -> mostrar(tela.get()));
         });
         botoes.add(b);
         return b;
+    }
+
+    /** Prontuario na tela: o aviso de inatividade pergunta se ha texto digitado e nao salvo. */
+    private Node abrir(ProntuarioView v) {
+        Node n = v.criar();
+        prontuario = v;
+        return n;
+    }
+
+    /** Ha texto de prontuario digitado e nao salvo na tela atual (aviso de inatividade). */
+    public boolean temTextoNaoSalvo() {
+        return prontuario != null && prontuario.temTextoNaoSalvo();
     }
 
     void mostrar(Node conteudo) {
@@ -92,6 +110,7 @@ public class TelaPrincipal {
     void abrirProntuario(int pacienteId) {
         botoes.forEach(x -> x.getStyleClass().remove("ativo"));
         botoes.get(3).getStyleClass().add("ativo");
-        Ui.executar(() -> mostrar(new ProntuarioView(ctx, pacienteId).criar()));
+        prontuario = null;
+        Ui.executar(() -> mostrar(abrir(new ProntuarioView(ctx, pacienteId))));
     }
 }

@@ -50,7 +50,20 @@ public class AgendaView {
         tabela.getColumns().add(Ui.col("Pago", a -> a.isPago() ? "Sim - " + Ui.formaPagamento(a.getFormaPagamento()) : "Não", 100));
         tabela.getColumns().add(Ui.col("Recibo", a -> a.isReciboEmitido() ? "Emitido" : "-", 80));
 
+        // duplo clique na linha = Editar
+        tabela.setRowFactory(t -> {
+            TableRow<Atendimento> linha = new TableRow<>();
+            linha.setOnMouseClicked(e -> {
+                if (e.getClickCount() == 2 && !linha.isEmpty()) {
+                    editar(linha.getItem());
+                    carregar();
+                }
+            });
+            return linha;
+        });
+
         var acoes = Ui.linha(
+                botao("Editar", this::editar),
                 botaoStatus("Confirmar", StatusAtendimento.CONFIRMADO),
                 botaoStatus("Realizado", StatusAtendimento.REALIZADO),
                 botaoStatus("Faltou", StatusAtendimento.FALTOU),
@@ -92,51 +105,113 @@ public class AgendaView {
                 AgendaService.FORMAS_PAGAMENTO.get(rotulos.indexOf(rotulo)))));
     }
 
-    private void novoAgendamento() {
+    private void novoAgendamento() { formulario(null); }
+
+    /** Botao "Editar" e duplo clique: realizado, falta e cancelado nem abrem o formulario. */
+    private void editar(Atendimento a) {
+        if (Ui.executar(() -> AgendaService.exigirEditavel(a))) formulario(a);
+    }
+
+    /** existente null = novo agendamento; senao, edicao (paciente e profissional nao mudam). */
+    private void formulario(Atendimento existente) {
+        boolean edicao = existente != null;
         ComboBox<Paciente> paciente = new ComboBox<>();
         ComboBox<Usuario> prof = new ComboBox<>();
         ComboBox<Servico> servico = new ComboBox<>();
         if (!Ui.executar(() -> {
-            paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
-            prof.getItems().setAll(ctx.cadastros.listarPsicologos());
+            if (!edicao) {
+                paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
+                prof.getItems().setAll(ctx.cadastros.listarPsicologos());
+                if (ctx.usuarioLogado().isPsicologo()) prof.setValue(ctx.usuarioLogado());
+            }
             servico.getItems().setAll(ctx.cadastros.listarServicos());
         })) return;
-        if (ctx.getSessao().usuario().isPsicologo()) prof.setValue(ctx.getSessao().usuario());
-        if (!servico.getItems().isEmpty()) servico.setValue(servico.getItems().get(0));
-        DatePicker data = new DatePicker(dia.getValue());
-        TextField hora = new TextField("08:00");
+        if (edicao) {
+            servico.getItems().stream().filter(s -> s.getId() == existente.getServicoId()).findFirst()
+                    .ifPresent(servico::setValue);
+        } else if (!servico.getItems().isEmpty()) {
+            servico.setValue(servico.getItems().get(0));
+        }
+        DatePicker data = new DatePicker(edicao ? existente.getInicio().toLocalDate() : dia.getValue());
+        TextField hora = new TextField(edicao ? existente.getInicio().format(Ui.HORA) : "08:00");
+        int duracaoInicial = edicao ? (int) java.time.Duration.between(existente.getInicio(), existente.getFim()).toMinutes()
+                : servico.getValue() == null ? 50 : servico.getValue().getDuracaoMin();
+        Spinner<Integer> duracao = new Spinner<>(1, AgendaService.DURACAO_MAXIMA_MIN, duracaoInicial, 5);
+        duracao.setEditable(true);
+        duracao.setPrefWidth(100);
+        // trocar o servico sugere a duracao dele (depois de preencher, para a edicao manter a atual)
+        servico.valueProperty().addListener((o, antes, s) -> {
+            if (s != null) duracao.getValueFactory().setValue(s.getDuracaoMin());
+        });
         ComboBox<Modalidade> modalidade = new ComboBox<>();
         modalidade.getItems().setAll(Modalidade.values());
-        modalidade.setValue(Modalidade.PRESENCIAL);
+        modalidade.setValue(edicao ? existente.getModalidade() : Modalidade.PRESENCIAL);
         Ui.rotular(modalidade, Modalidade::rotulo);
+        TextField observacao = new TextField(edicao && existente.getObservacao() != null ? existente.getObservacao() : "");
+        observacao.setPromptText("Ex.: trazer guia do convênio");
+        observacao.setPrefColumnCount(28);
         CheckBox convenio = new CheckBox("Cobrar pelo convênio do paciente");
 
         GridPane g = Ui.formulario();
-        g.addRow(0, new Label("Paciente"), paciente);
-        g.addRow(1, new Label("Profissional"), prof);
+        if (edicao) {
+            g.addRow(0, new Label("Paciente"), new Label(existente.getPacienteNome()));
+            g.addRow(1, new Label("Profissional"), new Label(existente.getProfissionalNome()));
+        } else {
+            g.addRow(0, new Label("Paciente"), paciente);
+            g.addRow(1, new Label("Profissional"), prof);
+        }
         g.addRow(2, new Label("Serviço"), servico);
         g.addRow(3, new Label("Data"), data);
         g.addRow(4, new Label("Hora (HH:mm)"), hora);
-        g.addRow(5, new Label("Modalidade"), modalidade);
-        g.add(convenio, 1, 6);
+        g.addRow(5, new Label("Duração (min)"), duracao);
+        g.addRow(6, new Label("Modalidade"), modalidade);
+        g.addRow(7, new Label("Observação"), observacao);
+        Label avisoObs = Ui.aviso("Observação administrativa, visível também à secretaria. "
+                + "Não registre informação clínica aqui: o lugar dela é o prontuário (cifrado).");
+        avisoObs.setMaxWidth(380);
+        g.add(avisoObs, 1, 8);
+        if (edicao) {
+            Label avisoPaciente = Ui.aviso("Para trocar o paciente ou o profissional, cancele e crie outro agendamento."
+                    + (existente.isPago() ? " Já pago: o valor não muda." : ""));
+            avisoPaciente.setMaxWidth(380);
+            g.add(avisoPaciente, 1, 9);
+        } else {
+            g.add(convenio, 1, 9);
+        }
 
         Dialog<ButtonType> d = new Dialog<>();
-        d.setTitle("Novo agendamento");
+        d.setTitle(edicao ? "Editar agendamento" : "Novo agendamento");
         d.getDialogPane().setContent(g);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, ev -> {
             boolean ok = Ui.executar(() -> {
-                if (paciente.getValue() == null || prof.getValue() == null || servico.getValue() == null)
-                    throw new br.com.kleber.psigestor.util.RegraNegocioException("Preencha paciente, profissional e serviço.");
-                ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
-                        montarInicio(data.getValue(), hora.getText()), modalidade.getValue(), convenio.isSelected());
+                if (servico.getValue() == null || (!edicao && (paciente.getValue() == null || prof.getValue() == null)))
+                    throw new RegraNegocioException(edicao ? "Escolha o serviço." : "Preencha paciente, profissional e serviço.");
+                LocalDateTime inicio = montarInicio(data.getValue(), hora.getText());
+                int minutos = lerDuracao(duracao.getEditor().getText());
+                if (edicao) {
+                    ctx.agenda.editar(existente.getId(), servico.getValue().getId(), inicio, minutos,
+                            modalidade.getValue(), observacao.getText());
+                } else {
+                    ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
+                            inicio, minutos, modalidade.getValue(), convenio.isSelected(), observacao.getText());
+                }
             });
             if (!ok) ev.consume();
         });
         d.showAndWait();
         if (data.getValue() != null) dia.setValue(data.getValue());
         carregar();
+    }
+
+    /** Texto digitado no Spinner (o valor so e confirmado com Enter): numero inteiro de minutos. */
+    static int lerDuracao(String texto) {
+        try {
+            return Integer.parseInt(texto == null ? "" : texto.trim());
+        } catch (NumberFormatException e) {
+            throw new RegraNegocioException("Duração inválida. Informe os minutos, ex.: 50");
+        }
     }
 
     /** Data do DatePicker (pode vir nula se o usuario limpar o campo) + hora digitada "HH:mm". */

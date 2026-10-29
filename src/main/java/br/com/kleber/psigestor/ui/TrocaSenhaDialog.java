@@ -22,7 +22,7 @@ public class TrocaSenhaDialog {
         g.addRow(2, new Label("Repita a nova senha"), repetir);
 
         VBox conteudo = new VBox(8, g);
-        if (ctx.getSessao().usuario().isPsicologo()) {
+        if (ctx.usuarioLogado().isPsicologo()) {
             Label aviso = Ui.aviso("Seus registros de prontuário continuam legíveis com a nova senha. "
                     + "Se a senha for perdida, só o código de recuperação devolve o acesso.");
             aviso.setMaxWidth(420);

@@ -5,16 +5,11 @@ import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.Versao;
-import javafx.animation.Animation;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.input.InputEvent;
 import javafx.stage.Stage;
-import javafx.util.Duration;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +18,7 @@ public class PsiGestorApp extends Application {
 
     private Contexto ctx;
     private Stage palco;
-    private Timeline inatividade;
+    private MonitorInatividade inatividade;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -72,28 +67,23 @@ public class PsiGestorApp extends Application {
     }
 
     void mostrarPrincipal() {
-        Scene cena = trocar(new TelaPrincipal(ctx, () -> {
+        Ui.sessaoIniciada();
+        TelaPrincipal principal = new TelaPrincipal(ctx, () -> {
             pararInatividade();
             Ui.executar(ctx::sair);
             mostrarLogin();
-        }).criar());
-        // qualquer tecla/clique conta como atividade; a cada 15 s verifica se passou do limite
-        cena.addEventFilter(InputEvent.ANY, e -> ctx.registrarAtividade());
-        inatividade = new Timeline(new KeyFrame(Duration.seconds(15), e -> {
-            // getSessao() == null: ja encerrada por registrarAtividade/exigirSessao
-            if (ctx.sairSeInativo() || ctx.getSessao() == null) {
-                pararInatividade();
-                mostrarLogin();
-                // dialogo modal nao pode abrir dentro do tratador da animacao
-                Platform.runLater(() -> Ui.info("Sessão encerrada por inatividade."));
-            }
-        }));
-        inatividade.setCycleCount(Animation.INDEFINITE);
-        inatividade.play();
+        });
+        trocar(principal.criar());
+        // qualquer tecla/clique em qualquer janela do app conta como atividade (B-12)
+        inatividade = new MonitorInatividade(ctx, palco, principal::temTextoNaoSalvo, () -> {
+            inatividade = null;
+            mostrarLogin();
+        });
+        inatividade.iniciar();
     }
 
     private void pararInatividade() {
-        if (inatividade != null) inatividade.stop();
+        if (inatividade != null) inatividade.parar();
         inatividade = null;
     }
 

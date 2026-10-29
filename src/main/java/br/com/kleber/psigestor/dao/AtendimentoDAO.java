@@ -31,8 +31,8 @@ public class AtendimentoDAO {
     public Atendimento inserir(Atendimento a) {
         String sql = """
             INSERT INTO atendimento (paciente_id, profissional_id, servico_id, convenio_id, inicio, fim,
-                                     status, modalidade, valor, pago, forma_pagamento, recibo_emitido)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""";
+                                     status, modalidade, valor, pago, forma_pagamento, recibo_emitido, observacao)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, a.getPacienteId());
             ps.setInt(2, a.getProfissionalId());
@@ -46,10 +46,23 @@ public class AtendimentoDAO {
             ps.setInt(10, a.isPago() ? 1 : 0);
             ps.setString(11, a.getFormaPagamento());
             ps.setInt(12, a.isReciboEmitido() ? 1 : 0);
+            ps.setString(13, a.getObservacao());
             ps.executeUpdate();
             a.setId(JdbcUtil.ultimoId(ps));
             return a;
         } catch (SQLException e) { throw new DaoException("Erro ao agendar", e); }
+    }
+
+    /**
+     * Grava a edicao de um agendamento (paciente, profissional, status e pagamento nao mudam).
+     * O filtro de status repete a regra do service: entre a leitura e o UPDATE nada vira REALIZADO.
+     */
+    public void atualizarAgendamento(Atendimento a) {
+        executar("""
+                UPDATE atendimento SET servico_id = ?, inicio = ?, fim = ?, modalidade = ?, valor = ?, observacao = ?
+                 WHERE id = ? AND status IN ('AGENDADO','CONFIRMADO')""",
+                a.getServicoId(), a.getInicio().format(FMT), a.getFim().format(FMT), a.getModalidade().name(),
+                a.getValorCentavos(), a.getObservacao(), a.getId());
     }
 
     public void atualizarStatus(int id, StatusAtendimento status) {
@@ -139,6 +152,7 @@ public class AtendimentoDAO {
                 a.setReciboEmitido(rs.getInt("recibo_emitido") == 1);
                 double perc = rs.getDouble("percentual_repasse_clinica");
                 a.setPercentualRepasseClinica(rs.wasNull() ? null : perc);
+                a.setObservacao(rs.getString("observacao"));
                 a.setPacienteNome(rs.getString("paciente_nome"));
                 a.setProfissionalNome(rs.getString("profissional_nome"));
                 a.setServicoNome(rs.getString("servico_nome"));

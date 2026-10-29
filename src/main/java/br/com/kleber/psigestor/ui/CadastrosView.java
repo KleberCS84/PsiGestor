@@ -33,7 +33,7 @@ public class CadastrosView {
         sValor.setPromptText("Valor");
         sValor.setPrefWidth(90);
         // valores definem o que e cobrado: so o psicologo altera (regra garantida no CadastroService)
-        boolean psicologo = ctx.getSessao().usuario().isPsicologo();
+        boolean psicologo = ctx.usuarioLogado().isPsicologo();
         Button addServ = new Button("Adicionar serviço");
         addServ.getStyleClass().add("primario");
         addServ.setDisable(!psicologo);

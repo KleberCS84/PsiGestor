@@ -34,9 +34,10 @@ public class Database implements AutoCloseable {
      *      e paciente.anonimizado_em
      *  v7: usuario.dek_recuperacao, salt_recuperacao, iteracoes_recuperacao (codigo de recuperacao; nulos)
      *  v8: usuario.termos_versao (0 = nunca aceitou) e usuario.termos_aceitos_em (aceite dos termos de uso)
+     *  v9: usuario.minutos_inatividade (existentes = 15) e atendimento.observacao
      * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 8;
+    public static final int VERSAO_ESQUEMA = 9;
     private static final String PREFIXO_URL = "jdbc:sqlite:";
 
     private final String url;
@@ -140,6 +141,11 @@ public class Database implements AutoCloseable {
                 // 0: quem ja usava o sistema aceita os termos no proximo login
                 adicionarColunaSeFaltar(st, "usuario", "termos_versao", "INTEGER NOT NULL DEFAULT 0");
                 adicionarColunaSeFaltar(st, "usuario", "termos_aceitos_em", "TEXT");
+            }
+            if (versao < 9) {
+                // sem CHECK em tabela existente (como na v2): AutenticacaoService.alterarInatividade valida
+                adicionarColunaSeFaltar(st, "usuario", "minutos_inatividade", "INTEGER NOT NULL DEFAULT 15");
+                adicionarColunaSeFaltar(st, "atendimento", "observacao", "TEXT");
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));

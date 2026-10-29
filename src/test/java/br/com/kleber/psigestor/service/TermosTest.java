@@ -113,7 +113,7 @@ class TermosTest {
         assertTrue(Files.exists(tmp.resolve("teste.db.pre-v" + Database.VERSAO_ESQUEMA)));
         try (Connection con = DriverManager.getConnection(url()); Statement st = con.createStatement();
              ResultSet rs = st.executeQuery("PRAGMA user_version")) {
-            assertEquals(8, rs.getInt(1));
+            assertEquals(Database.VERSAO_ESQUEMA, rs.getInt(1));   // v7 sobe direto para a atual
         }
         Usuario u = ctx.usuarios.buscar(ana.getId()).orElseThrow();
         assertEquals(0, u.getTermosVersao());

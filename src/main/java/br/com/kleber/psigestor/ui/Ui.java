@@ -3,6 +3,7 @@ package br.com.kleber.psigestor.ui;
 import br.com.kleber.psigestor.dao.DaoException;
 import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.RegraNegocioException;
+import br.com.kleber.psigestor.util.SessaoEncerradaException;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
@@ -137,11 +138,27 @@ public final class Ui {
         try {
             acao.run();
             return true;
+        } catch (SessaoEncerradaException e) {
+            avisarSessaoEncerrada();
         } catch (RuntimeException e) {
             exibirErro.accept(mensagemPara(e));
         }
         return false;
     }
+
+    private static boolean encerramentoAvisado;
+
+    /**
+     * Sessao vencida (B-12): varias telas e o MonitorInatividade podem esbarrar nela ao mesmo tempo;
+     * a mensagem aparece uma vez so, ate o proximo login (sessaoIniciada).
+     */
+    static void avisarSessaoEncerrada() {
+        if (encerramentoAvisado) return;
+        encerramentoAvisado = true;
+        exibirErro.accept(SessaoEncerradaException.MENSAGEM);
+    }
+
+    static void sessaoIniciada() { encerramentoAvisado = false; }
 
     /**
      * Regra de negocio: a mensagem e para o usuario. Qualquer outra (banco, bug): mensagem do SQLite ou

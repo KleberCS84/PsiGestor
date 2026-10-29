@@ -88,11 +88,11 @@ public class PrivacidadeView {
 
         Button backup = new Button("Gerar backup agora");
         backup.getStyleClass().add("primario");
-        backup.setDisable(!ctx.getSessao().usuario().isPsicologo());
+        backup.setDisable(!ctx.usuarioLogado().isPsicologo());
         backup.setOnAction(e -> fazerBackup(ctx, log.getScene().getWindow()));
 
         Button restaurar = new Button("Restaurar backup...");
-        restaurar.setDisable(!ctx.getSessao().usuario().isPsicologo());
+        restaurar.setDisable(!ctx.usuarioLogado().isPsicologo());
         restaurar.setOnAction(e -> {
             FileChooser fc = new FileChooser();
             fc.setTitle("Escolha o arquivo de backup");

@@ -56,7 +56,7 @@ public class PacientesView {
         Button consent = new Button("Consentimentos");
         consent.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::consentimentos));
         Button exportar = new Button("Exportar dados (LGPD)");
-        exportar.setDisable(!ctx.getSessao().usuario().isPsicologo());
+        exportar.setDisable(!ctx.usuarioLogado().isPsicologo());
         exportar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::exportar));
         Button anonimizar = new Button("Anonimizar (LGPD)");
         anonimizar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::anonimizar));

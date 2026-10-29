@@ -14,6 +14,8 @@ public class ProntuarioView {
     private final ComboBox<Paciente> paciente = new ComboBox<>();
     private final ListView<Evolucao> registros = new ListView<>();
     private final TextArea texto = new TextArea();
+    /** Campo do dialogo de retificacao, enquanto ele esta aberto. */
+    private TextField retificacaoAberta;
 
     public ProntuarioView(Contexto ctx, Integer pacienteInicial) {
         this.ctx = ctx;
@@ -21,7 +23,7 @@ public class ProntuarioView {
     }
 
     public Node criar() {
-        if (!ctx.getSessao().podeLerProntuario()) {
+        if (!ctx.podeLerProntuario()) {
             return Ui.tela(Ui.titulo("Prontuário"), Ui.aviso(
                     "Acesso restrito ao psicólogo. O conteúdo do prontuário é sigiloso (Código de Ética "
                     + "Profissional do Psicólogo, art. 9º) e fica cifrado com a chave pessoal do profissional."));
@@ -75,6 +77,11 @@ public class ProntuarioView {
                         + "Correções geram um novo registro de retificação, mantendo o original."));
     }
 
+    /** Novo registro ou retificacao digitados e ainda nao salvos (o logout por inatividade os perde). */
+    public boolean temTextoNaoSalvo() {
+        return !texto.getText().isBlank() || (retificacaoAberta != null && !retificacaoAberta.getText().isBlank());
+    }
+
     private void carregar() {
         if (paciente.getValue() == null) { registros.getItems().clear(); return; }
         Ui.executar(() -> registros.getItems().setAll(ctx.prontuario.listar(paciente.getValue().getId())));
@@ -86,7 +93,10 @@ public class ProntuarioView {
         TextInputDialog d = new TextInputDialog();
         d.setTitle("Retificação do registro #" + ev.id());
         d.setHeaderText("Descreva a correção (o registro original será mantido).");
-        d.showAndWait().ifPresent(t -> {
+        retificacaoAberta = d.getEditor();
+        var resposta = d.showAndWait();
+        retificacaoAberta = null;
+        resposta.ifPresent(t -> {
             Ui.executar(() -> ctx.prontuario.retificar(ev.pacienteId(), ev.id(), t));
             carregar();
         });

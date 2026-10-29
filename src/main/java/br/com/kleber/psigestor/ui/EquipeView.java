@@ -24,7 +24,7 @@ public class EquipeView {
                 ? String.format("%.1f%%", u.getPercentualRepasseClinica()) : "-", 150));
         tabela.getColumns().add(Ui.col("Situação", u -> u.isAtivo() ? "Ativo" : "Inativo", 90));
 
-        boolean psicologo = ctx.getSessao().usuario().isPsicologo();
+        boolean psicologo = ctx.usuarioLogado().isPsicologo();
         Button novo = new Button("+ Novo usuário");
         novo.getStyleClass().add("primario");
         novo.setDisable(!psicologo);

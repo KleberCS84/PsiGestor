@@ -7,6 +7,7 @@ import br.com.kleber.psigestor.util.Criptografia;
 import br.com.kleber.psigestor.util.Database;
 import br.com.kleber.psigestor.util.LogTecnico;
 import br.com.kleber.psigestor.util.RegraNegocioException;
+import br.com.kleber.psigestor.util.SessaoEncerradaException;
 import br.com.kleber.psigestor.util.Validadores;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
@@ -790,9 +791,10 @@ class PsiGestorTest {
     }
 
     @Test
-    void dezMinutosSemAtividadeEncerramASessao() {
+    void tempoPadraoSemAtividadeEncerraASessao() {
         RelogioAjustavel r = relogioAjustavel();
-        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        assertEquals(Duration.ofMinutes(Contexto.PADRAO_INATIVIDADE_MIN), ctx.tempoInatividade());
+        r.avancar(ctx.tempoInatividade());
         assertThrows(RegraNegocioException.class, () -> ctx.pacienteService.pesquisar("", false));
         assertNull(ctx.getSessao());
         assertTrue(ctx.logs.ultimos(3).stream().anyMatch(l -> l.acao().equals("LOGOUT_INATIVIDADE")));
@@ -801,14 +803,203 @@ class PsiGestorTest {
     @Test
     void atividadeAdiaOLogoutAutomatico() {
         RelogioAjustavel r = relogioAjustavel();
-        r.avancar(Duration.ofMinutes(9));
-        ctx.registrarAtividade();
-        r.avancar(Duration.ofMinutes(9));
+        r.avancar(Duration.ofMinutes(14));
+        assertTrue(ctx.registrarAtividade());
+        r.avancar(Duration.ofMinutes(14));
         assertFalse(ctx.sairSeInativo());
         assertDoesNotThrow(() -> ctx.pacienteService.pesquisar("", false));
-        r.avancar(Duration.ofMinutes(10));
-        ctx.registrarAtividade();                 // clique depois do limite nao revive a sessao
+        r.avancar(Duration.ofMinutes(15));
+        assertFalse(ctx.registrarAtividade());    // clique depois do limite nao revive a sessao
         assertNull(ctx.getSessao());
+    }
+
+    // ---------- preferencias: tempo de inatividade por usuario ----------
+    @Test
+    void inatividadeRespeitaValorDoUsuario() {
+        ctx.autenticacao.alterarInatividade(30);
+        RelogioAjustavel r = relogioAjustavel();
+        r.avancar(Duration.ofMinutes(29));
+        assertFalse(ctx.sairSeInativo());
+        assertEquals(Duration.ofMinutes(1), ctx.restanteAteExpirar());   // a tela avisa a partir daqui
+        r.avancar(Duration.ofMinutes(1));
+        assertTrue(ctx.sairSeInativo());
+
+        // gravado no banco: vale de novo no proximo login
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        assertEquals(Duration.ofMinutes(30), ctx.tempoInatividade());
+        ctx.autenticacao.alterarInatividade(5);                          // vale ja na sessao atual
+        r.avancar(Duration.ofMinutes(4));
+        assertFalse(ctx.sairSeInativo());
+        r.avancar(Duration.ofMinutes(1));
+        assertTrue(ctx.sairSeInativo());
+    }
+
+    @Test
+    void alterarInatividadeAuditaEValida() {
+        ctx.autenticacao.alterarInatividade(30);
+        var log = ctx.logs.ultimos(1).get(0);
+        assertEquals("PREFERENCIA_ALTERADA", log.acao());
+        assertEquals("inatividade: 15 -> 30", log.detalhe());
+        assertEquals(30, ctx.usuarios.buscar(ana.getId()).orElseThrow().getMinutosInatividade());
+        for (int invalido : new int[] {0, -1, 7, 120})     // sem "nunca" nem valores fora da lista (M1)
+            assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.alterarInatividade(invalido));
+        assertEquals(30, ctx.usuarios.buscar(ana.getId()).orElseThrow().getMinutosInatividade());
+        ctx.sair();
+        assertThrows(RegraNegocioException.class, () -> ctx.autenticacao.alterarInatividade(10));
+    }
+
+    /** B-12: depois de vencida, telas e services recebem "Sessao encerrada", nao NPE nem "Faca login". */
+    @Test
+    void sessaoVencidaRespondeSessaoEncerrada() {
+        RelogioAjustavel r = relogioAjustavel();
+        r.avancar(ctx.tempoInatividade());
+        assertFalse(ctx.registrarAtividade());               // a tela consome o evento e volta ao login
+        assertNull(ctx.getSessao());
+        var e = assertThrows(SessaoEncerradaException.class, ctx::usuarioLogado);
+        assertEquals(SessaoEncerradaException.MENSAGEM, e.getMessage());
+        assertThrows(SessaoEncerradaException.class, ctx::podeLerProntuario);
+        assertThrows(SessaoEncerradaException.class, () -> ctx.agenda.doDia(LocalDate.of(2026, 10, 13), null));
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        assertEquals("Ana Souza", ctx.usuarioLogado().getNome());
+        ctx.sair();                                          // logout manual nao e "por inatividade"
+        var manual = assertThrows(RegraNegocioException.class, ctx::usuarioLogado);
+        assertFalse(manual instanceof SessaoEncerradaException);
+    }
+
+    @Test
+    void migracaoV9CriaInatividadePadraoEObservacao() throws SQLException {
+        ctx.close();
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (Connection con = DriverManager.getConnection(url); Statement st = con.createStatement()) {
+            st.execute("ALTER TABLE usuario DROP COLUMN minutos_inatividade");
+            st.execute("ALTER TABLE atendimento DROP COLUMN observacao");
+            st.execute("PRAGMA user_version = 8");
+        }
+        ctx = new Contexto(url);
+        ZoneId zona = ZoneId.systemDefault();
+        ctx.setRelogio(Clock.fixed(LocalDate.of(2026, 10, 12).atStartOfDay(zona).toInstant(), zona));
+        assertEquals(Contexto.PADRAO_INATIVIDADE_MIN, ctx.usuarios.buscarPorLogin("ana").orElseThrow().getMinutosInatividade());
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), TERCA_14H, null,
+                Modalidade.PRESENCIAL, false, "trazer guia");
+        assertEquals("trazer guia", ctx.atendimentos.buscar(a.getId()).orElseThrow().getObservacao());
+    }
+
+    // ---------- editar agendamento ----------
+    private static final LocalDateTime TERCA_14H = LocalDateTime.of(2026, 10, 13, 14, 0);
+
+    private Atendimento agendarJoao(LocalDateTime inicio) {
+        return ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), inicio, Modalidade.PRESENCIAL, false);
+    }
+
+    @Test
+    void editarComConflitoERecusado() {
+        Atendimento a = agendarJoao(TERCA_14H);
+        // profissional: Ana ja atende Maria as 16h
+        Paciente maria = ctx.pacienteService.salvar(new Paciente("Maria Dias", null, null));
+        ctx.agenda.agendar(maria.getId(), ana.getId(), sessao.getId(), TERCA_14H.plusHours(2), Modalidade.PRESENCIAL, false);
+        var e1 = assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                TERCA_14H.plusHours(2).plusMinutes(30), 50, Modalidade.PRESENCIAL, null));
+        assertTrue(e1.getMessage().contains("Ana Souza"), e1.getMessage());
+        // paciente: Joao ja tem sessao com outra psicologa as 10h
+        Usuario carla = ctx.autenticacao.cadastrar("Carla Melo", "carla", "senhaCarla12".toCharArray(),
+                Papel.PSICOLOGO, "09/22222", 30);
+        ctx.agenda.agendar(joao.getId(), carla.getId(), sessao.getId(), TERCA_14H.minusHours(4), Modalidade.PRESENCIAL, false);
+        var e2 = assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                TERCA_14H.minusHours(4).plusMinutes(20), 50, Modalidade.PRESENCIAL, null));
+        assertTrue(e2.getMessage().contains("Joao Lima"), e2.getMessage());
+        // janela de datas (M9) e consentimento online, como no agendamento novo
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                LocalDateTime.of(2028, 1, 10, 14, 0), 50, Modalidade.PRESENCIAL, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                TERCA_14H, 50, Modalidade.ONLINE, null));
+        assertFalse(ctx.logs.ultimos(20).stream().anyMatch(l -> l.acao().equals("ALTERACAO_ATENDIMENTO")));
+        assertEquals(TERCA_14H, ctx.atendimentos.buscar(a.getId()).orElseThrow().getInicio());
+
+        // o proprio horario nao conflita consigo mesmo
+        assertDoesNotThrow(() -> ctx.agenda.editar(a.getId(), sessao.getId(), TERCA_14H.plusMinutes(10), 50,
+                Modalidade.PRESENCIAL, "trazer guia"));
+        Atendimento gravado = ctx.atendimentos.buscar(a.getId()).orElseThrow();
+        assertEquals(TERCA_14H.plusMinutes(10), gravado.getInicio());
+        assertEquals("trazer guia", gravado.getObservacao());
+        ctx.pacienteService.registrarConsentimento(joao.getId(), TipoConsentimento.ATENDIMENTO_ONLINE, true, "assinado");
+        assertDoesNotThrow(() -> ctx.agenda.editar(a.getId(), sessao.getId(), TERCA_14H, 50, Modalidade.ONLINE, null));
+    }
+
+    @Test
+    void editarRealizadoERecusado() {
+        int hora = 0;
+        for (StatusAtendimento s : List.of(StatusAtendimento.REALIZADO, StatusAtendimento.FALTOU, StatusAtendimento.CANCELADO)) {
+            Atendimento a = agendarJoao(TERCA_14H.plusHours(hora++));
+            ctx.agenda.alterarStatus(a.getId(), s);
+            var e = assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                    a.getInicio().plusDays(1), 50, Modalidade.PRESENCIAL, null));
+            assertTrue(e.getMessage().contains("financeiro"), e.getMessage());
+            assertEquals(a.getInicio(), ctx.atendimentos.buscar(a.getId()).orElseThrow().getInicio());
+        }
+        Atendimento confirmado = agendarJoao(TERCA_14H.plusDays(2));
+        ctx.agenda.alterarStatus(confirmado.getId(), StatusAtendimento.CONFIRMADO);
+        assertDoesNotThrow(() -> ctx.agenda.editar(confirmado.getId(), sessao.getId(),
+                TERCA_14H.plusDays(3), 50, Modalidade.PRESENCIAL, null));
+    }
+
+    @Test
+    void trocaDeServicoRecalculaValor() {
+        Servico avaliacao = ctx.servicos.salvar(new Servico("Avaliacao psicologica", null, 90, 35000));
+        Atendimento a = agendarJoao(TERCA_14H);
+        assertEquals(20000, a.getValorCentavos());
+        ctx.agenda.editar(a.getId(), avaliacao.getId(), TERCA_14H.plusDays(1), 90, Modalidade.PRESENCIAL, null);
+
+        Atendimento gravado = ctx.atendimentos.buscar(a.getId()).orElseThrow();
+        assertEquals(35000, gravado.getValorCentavos());
+        assertEquals(avaliacao.getId().intValue(), gravado.getServicoId());
+        assertEquals(TERCA_14H.plusDays(1).plusMinutes(90), gravado.getFim());
+        assertEquals(joao.getId().intValue(), gravado.getPacienteId());
+        var log = ctx.logs.ultimos(1).get(0);
+        assertEquals("ALTERACAO_ATENDIMENTO", log.acao());
+        assertEquals(a.getId(), log.entidadeId());
+        assertTrue(log.detalhe().startsWith("data: 13/10/2026 14:00 -> 14/10/2026 14:00; "
+                + "servico: Psicoterapia individual -> Avaliacao psicologica"), log.detalhe());
+        assertFalse(log.detalhe().contains("Joao"), log.detalhe());       // sem nome de paciente
+    }
+
+    @Test
+    void atendimentoPagoMantemValor() {
+        Servico avaliacao = ctx.servicos.salvar(new Servico("Avaliacao psicologica", null, 90, 35000));
+        Atendimento a = agendarJoao(TERCA_14H);
+        ctx.agenda.registrarPagamento(a.getId(), "PIX");
+        ctx.agenda.editar(a.getId(), avaliacao.getId(), TERCA_14H, 90, Modalidade.PRESENCIAL, null);
+        Atendimento gravado = ctx.atendimentos.buscar(a.getId()).orElseThrow();
+        assertEquals(20000, gravado.getValorCentavos());
+        assertEquals(avaliacao.getId().intValue(), gravado.getServicoId());
+        assertTrue(gravado.isPago());
+        assertEquals("PIX", gravado.getFormaPagamento());
+    }
+
+    @Test
+    void convenioMantemValorAoTrocarServico() {
+        Convenio c = ctx.convenios.salvar(new Convenio("Unimed", null, 9000, 30));
+        joao.setConvenioId(c.getId());
+        ctx.pacienteService.salvar(joao);
+        Servico avaliacao = ctx.servicos.salvar(new Servico("Avaliacao psicologica", null, 90, 35000));
+        Atendimento a = ctx.agenda.agendar(joao.getId(), ana.getId(), sessao.getId(), TERCA_14H, Modalidade.PRESENCIAL, true);
+        ctx.agenda.editar(a.getId(), avaliacao.getId(), TERCA_14H, 90, Modalidade.PRESENCIAL, null);
+        assertEquals(9000, ctx.atendimentos.buscar(a.getId()).orElseThrow().getValorCentavos());
+    }
+
+    @Test
+    void secretariaEditaAgendamento() {
+        Atendimento a = agendarJoao(TERCA_14H);
+        ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        ctx.sair();
+        ctx.autenticacao.entrar("bia", "senhaBia1234".toCharArray());
+        assertDoesNotThrow(() -> ctx.agenda.editar(a.getId(), sessao.getId(), TERCA_14H.plusHours(1), 50,
+                Modalidade.PRESENCIAL, null));
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                TERCA_14H.plusHours(1), 0, Modalidade.PRESENCIAL, null));                 // duracao invalida
+        assertThrows(RegraNegocioException.class, () -> ctx.agenda.editar(a.getId(), sessao.getId(),
+                TERCA_14H.plusHours(1), 50, Modalidade.PRESENCIAL, "x".repeat(501)));     // observacao longa
     }
 
     // ---------- revisao final: B-4, B-5 ----------
@@ -1010,14 +1201,14 @@ class PsiGestorTest {
     void logFalhandoNaoImpedeLogoutPorInatividade() throws SQLException {
         RelogioAjustavel r = relogioAjustavel();
         logFalhando(true);
-        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        r.avancar(ctx.tempoInatividade());
         assertTrue(ctx.sairSeInativo());
         assertNull(ctx.getSessao());
 
         logFalhando(false);                        // o login e auditado em transacao: precisa do log
         ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
         logFalhando(true);
-        r.avancar(Contexto.TEMPO_INATIVIDADE);
+        r.avancar(ctx.tempoInatividade());
         RegraNegocioException e = assertThrows(RegraNegocioException.class,
                 () -> ctx.pacienteService.pesquisar("", false));
         assertTrue(e.getMessage().contains("inatividade"), e.getMessage());

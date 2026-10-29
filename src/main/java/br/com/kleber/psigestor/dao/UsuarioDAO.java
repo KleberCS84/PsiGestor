@@ -117,6 +117,16 @@ public class UsuarioDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao registrar aceite dos termos", e); }
     }
 
+    /** Preferencia do proprio usuario: minutos sem atividade ate o logout automatico. */
+    public void atualizarInatividade(int id, int minutos) {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE usuario SET minutos_inatividade = ? WHERE id = ?")) {
+            ps.setInt(1, minutos);
+            ps.setInt(2, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
+    }
+
     public Optional<Usuario> buscarPorLogin(String login) {
         try (PreparedStatement ps = con.prepareStatement("SELECT * FROM usuario WHERE login = ?")) {
             ps.setString(1, login);
@@ -167,6 +177,7 @@ public class UsuarioDAO {
         u.setIteracoesRecuperacao(rs.wasNull() ? null : it);
         u.setTermosVersao(rs.getInt("termos_versao"));
         u.setTermosAceitosEm(rs.getString("termos_aceitos_em"));
+        u.setMinutosInatividade(rs.getInt("minutos_inatividade"));
         return u;
     }
 }
