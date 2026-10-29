@@ -2,6 +2,7 @@ package br.com.kleber.psigestor.ui;
 
 import br.com.kleber.psigestor.service.AutenticacaoService;
 import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.service.EnvioAgendaService;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
@@ -29,14 +30,29 @@ public class PreferenciasDialog {
                 + "Um aviso aparece 1 minuto antes.");
         aviso.setMaxWidth(420);
 
+        String atual = ctx.usuarioLogado().getModeloMensagemAgenda();
+        TextArea modelo = new TextArea(atual == null ? EnvioAgendaService.MODELO_PADRAO : atual);
+        modelo.setWrapText(true);
+        modelo.setPrefRowCount(5);
+        modelo.setPrefColumnCount(40);
+        Button padrao = new Button("Restaurar padrão");
+        padrao.setOnAction(e -> modelo.setText(EnvioAgendaService.MODELO_PADRAO));
+        Label legenda = Ui.aviso("Mensagem de horários (Consultar agenda). Use {paciente}, {profissional} e {lista}; "
+                + "{lista} é obrigatório e vira uma linha por atendimento, ex.: \"• qua, 05/11 às 14:00 (online)\".");
+        legenda.setMaxWidth(420);
+
         Dialog<ButtonType> d = new Dialog<>();
         d.setTitle("Preferências");
         d.setHeaderText(null);
-        d.getDialogPane().setContent(new VBox(8, g, aviso));
+        d.getDialogPane().setContent(new VBox(8, g, aviso, new Separator(),
+                new Label("Mensagem de horários ao paciente"), modelo, Ui.linha(padrao), legenda));
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
-            if (!Ui.executar(() -> ctx.autenticacao.alterarInatividade(inatividade.getValue()))) e.consume();
+            if (!Ui.executar(() -> {
+                ctx.autenticacao.alterarModeloMensagem(modelo.getText());   // valida {lista} antes de gravar algo
+                ctx.autenticacao.alterarInatividade(inatividade.getValue());
+            })) e.consume();
         });
         d.showAndWait();
     }

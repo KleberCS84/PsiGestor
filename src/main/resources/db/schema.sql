@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS usuario (
     termos_versao   INTEGER NOT NULL DEFAULT 0, -- versao dos termos de uso aceita; 0 = nunca aceitou
     termos_aceitos_em TEXT,                   -- yyyy-MM-ddTHH:mm:ss (hora local) do aceite
     minutos_inatividade INTEGER NOT NULL DEFAULT 15
-                    CHECK (minutos_inatividade IN (5,10,15,30,60))  -- logout automatico; sem "nunca" (M1)
+                    CHECK (minutos_inatividade IN (5,10,15,30,60)),  -- logout automatico; sem "nunca" (M1)
+    modelo_mensagem_agenda TEXT               -- envio de horarios ao paciente; null = modelo padrao
 );
 
 CREATE TABLE IF NOT EXISTS convenio (

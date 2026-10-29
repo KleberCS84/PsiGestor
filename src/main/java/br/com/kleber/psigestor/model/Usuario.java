@@ -20,6 +20,7 @@ public class Usuario {
     private int termosVersao;             // versao dos termos de uso aceita; 0 = nunca aceitou
     private String termosAceitosEm;
     private int minutosInatividade = 15;  // logout automatico; opcoes em AutenticacaoService.OPCOES_INATIVIDADE
+    private String modeloMensagemAgenda;  // envio de horarios ao paciente; null = EnvioAgendaService.MODELO_PADRAO
 
     public Usuario() { }
 
@@ -70,6 +71,8 @@ public class Usuario {
     public void setTermosAceitosEm(String termosAceitosEm) { this.termosAceitosEm = termosAceitosEm; }
     public int getMinutosInatividade() { return minutosInatividade; }
     public void setMinutosInatividade(int minutos) { this.minutosInatividade = minutos; }
+    public String getModeloMensagemAgenda() { return modeloMensagemAgenda; }
+    public void setModeloMensagemAgenda(String modelo) { this.modeloMensagemAgenda = modelo; }
     public boolean temRecuperacao() {
         return dekRecuperacao != null && saltRecuperacao != null && iteracoesRecuperacao != null;
     }

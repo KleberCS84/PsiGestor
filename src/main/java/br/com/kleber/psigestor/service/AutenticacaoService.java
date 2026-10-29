@@ -264,6 +264,29 @@ public class AutenticacaoService {
         u.setMinutosInatividade(minutos);
     }
 
+    /**
+     * Modelo da mensagem de horarios do usuario logado ({paciente}, {profissional}, {lista}).
+     * Vazio volta ao padrao. Auditado sem o texto.
+     */
+    public void alterarModeloMensagem(String modelo) {
+        Sessao s = ctx.exigirSessao();
+        String m = Validadores.vazio(modelo) ? null : modelo.strip();
+        if (m != null && !m.contains("{lista}"))
+            throw new RegraNegocioException("O modelo precisa conter {lista}, onde entram os horários.");
+        if (m != null && m.length() > EnvioAgendaService.MODELO_MAXIMO)
+            throw new RegraNegocioException("Modelo com no máximo " + EnvioAgendaService.MODELO_MAXIMO + " caracteres.");
+        if (m != null && m.equals(EnvioAgendaService.MODELO_PADRAO)) m = null;
+        Usuario u = s.usuario();
+        String novo = m;
+        if (java.util.Objects.equals(novo, u.getModeloMensagemAgenda())) return;
+        ctx.transacao(() -> {
+            ctx.usuarios.atualizarModeloMensagem(u.getId(), novo);
+            ctx.auditar("PREFERENCIA_ALTERADA", "usuario", u.getId(),
+                    novo == null ? "modelo de mensagem de horarios: padrao" : "modelo de mensagem de horarios");
+        });
+        u.setModeloMensagemAgenda(novo);
+    }
+
     /** Psicologo logado que ainda nao tem codigo de recuperacao (a tela oferece a cada login ate gerar). */
     public boolean precisaCodigoRecuperacao() {
         Sessao s = ctx.exigirSessao();

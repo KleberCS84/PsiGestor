@@ -127,6 +127,16 @@ public class UsuarioDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
     }
 
+    /** Modelo da mensagem de horarios do proprio usuario; null volta ao padrao. */
+    public void atualizarModeloMensagem(int id, String modelo) {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE usuario SET modelo_mensagem_agenda = ? WHERE id = ?")) {
+            ps.setString(1, modelo);
+            ps.setInt(2, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
+    }
+
     public Optional<Usuario> buscarPorLogin(String login) {
         try (PreparedStatement ps = con.prepareStatement("SELECT * FROM usuario WHERE login = ?")) {
             ps.setString(1, login);
@@ -178,6 +188,7 @@ public class UsuarioDAO {
         u.setTermosVersao(rs.getInt("termos_versao"));
         u.setTermosAceitosEm(rs.getString("termos_aceitos_em"));
         u.setMinutosInatividade(rs.getInt("minutos_inatividade"));
+        u.setModeloMensagemAgenda(rs.getString("modelo_mensagem_agenda"));
         return u;
     }
 }

@@ -125,6 +125,24 @@ public class AtendimentoDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao listar agenda", e); }
     }
 
+    /**
+     * Consulta de agenda: intervalo [de, ate), paciente e status opcionais (null = todos).
+     * Ordem por data e hora; so parametros "?" (nada digitado e concatenado).
+     */
+    public List<Atendimento> consultar(Integer pacienteId, LocalDateTime de, LocalDateTime ate, StatusAtendimento status) {
+        String sql = SELECT_BASE + " WHERE a.inicio >= ? AND a.inicio < ? "
+                + (pacienteId == null ? "" : " AND a.paciente_id = ? ")
+                + (status == null ? "" : " AND a.status = ? ") + " ORDER BY a.inicio";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            int i = 1;
+            ps.setString(i++, de.format(FMT));
+            ps.setString(i++, ate.format(FMT));
+            if (pacienteId != null) ps.setInt(i++, pacienteId);
+            if (status != null) ps.setString(i, status.name());
+            return listar(ps);
+        } catch (SQLException e) { throw new DaoException("Erro ao consultar agenda", e); }
+    }
+
     public List<Atendimento> listarPorPaciente(int pacienteId) {
         try (PreparedStatement ps = con.prepareStatement(SELECT_BASE + " WHERE a.paciente_id = ? ORDER BY a.inicio DESC")) {
             ps.setInt(1, pacienteId);

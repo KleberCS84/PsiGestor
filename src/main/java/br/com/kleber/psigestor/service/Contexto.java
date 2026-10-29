@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.function.Supplier;
 
 /**
@@ -51,6 +52,7 @@ public class Contexto implements AutoCloseable {
     public final FinanceiroService financeiro;
     public final BackupService backup;
     public final CadastroService cadastros;
+    public final EnvioAgendaService envioAgenda;
 
     public Contexto(String urlBanco) {
         db = new Database(urlBanco);
@@ -71,6 +73,7 @@ public class Contexto implements AutoCloseable {
         financeiro = new FinanceiroService(this);
         backup = new BackupService(this, db);
         cadastros = new CadastroService(this);
+        envioAgenda = new EnvioAgendaService(this);
     }
 
     public Sessao getSessao() { return sessao; }
@@ -111,6 +114,9 @@ public class Contexto implements AutoCloseable {
 
     /** Data/hora local pelo relogio do contexto (comparada com log_acesso.data_hora, que e hora local). */
     LocalDateTime agoraLocal() { return LocalDateTime.now(relogio); }
+
+    /** Fuso do relogio do contexto (convite .ics em UTC a partir da hora local). */
+    ZoneId zona() { return relogio.getZone(); }
 
     /** Somente para testes automatizados (datas fixas nao "vencem" com o passar do tempo). */
     void setRelogio(Clock relogio) { this.relogio = relogio; }

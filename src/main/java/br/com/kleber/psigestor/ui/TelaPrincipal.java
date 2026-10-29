@@ -22,6 +22,7 @@ public class TelaPrincipal {
     private final BorderPane raiz = new BorderPane();
     private final List<Button> botoes = new ArrayList<>();
     private ProntuarioView prontuario;   // so quando o prontuario e a tela atual
+    private Button botaoProntuario;      // atalho da Agenda marca este botao (nao depende da posicao no menu)
 
     public TelaPrincipal(Contexto ctx, Runnable aoSair) {
         this.ctx = ctx;
@@ -41,8 +42,9 @@ public class TelaPrincipal {
         menu.getChildren().addAll(
                 item("Painel", () -> new PainelView(ctx).criar()),
                 item("Agenda", () -> new AgendaView(ctx, this).criar()),
+                item("Consultar agenda", () -> new ConsultaAgendaView(ctx).criar()),
                 item("Pacientes", () -> new PacientesView(ctx).criar()),
-                item("Prontuário", () -> abrir(new ProntuarioView(ctx, null))),
+                botaoProntuario = item("Prontuário", () -> abrir(new ProntuarioView(ctx, null))),
                 item("Financeiro", () -> new FinanceiroView(ctx).criar()),
                 item("Serviços & Convênios", () -> new CadastrosView(ctx).criar()),
                 item("Equipe & Repasse", () -> new EquipeView(ctx).criar()),
@@ -109,7 +111,7 @@ public class TelaPrincipal {
     /** Atalho usado pela Agenda: abre o prontuario ja no paciente escolhido. */
     void abrirProntuario(int pacienteId) {
         botoes.forEach(x -> x.getStyleClass().remove("ativo"));
-        botoes.get(3).getStyleClass().add("ativo");
+        botaoProntuario.getStyleClass().add("ativo");
         prontuario = null;
         Ui.executar(() -> mostrar(abrir(new ProntuarioView(ctx, pacienteId))));
     }

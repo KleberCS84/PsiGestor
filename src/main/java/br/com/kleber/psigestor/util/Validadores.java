@@ -35,6 +35,13 @@ public final class Validadores {
         return d.length() == 10 || d.length() == 11;
     }
 
+    private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s.]{2,}");
+
+    /** Conferencia simples (algo@dominio.tld, sem espacos): pega digitacao errada, nao garante entrega. */
+    public static boolean emailValido(String email) {
+        return !vazio(email) && EMAIL.matcher(email.trim()).matches();
+    }
+
     public static boolean vazio(String s) {
         return s == null || s.isBlank();
     }
