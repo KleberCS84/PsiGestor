@@ -14,6 +14,17 @@ public enum StatusAtendimento {
         };
     }
 
+    /** Texto para o paciente (mensagem de horarios): "sessao realizada", "nao compareceu". */
+    public String rotuloParaPaciente() {
+        return switch (this) {
+            case AGENDADO -> "agendada";
+            case CONFIRMADO -> "confirmada";
+            case REALIZADO -> "realizada";
+            case FALTOU -> "não compareceu";
+            case CANCELADO -> "cancelada";
+        };
+    }
+
     /** Status que ocupam o horario na agenda (usado na checagem de conflito). */
     public boolean ocupaHorario() {
         return this != CANCELADO;

@@ -275,7 +275,9 @@ public class AutenticacaoService {
             throw new RegraNegocioException("O modelo precisa conter {lista}, onde entram os horários.");
         if (m != null && m.length() > EnvioAgendaService.MODELO_MAXIMO)
             throw new RegraNegocioException("Modelo com no máximo " + EnvioAgendaService.MODELO_MAXIMO + " caracteres.");
-        if (m != null && m.equals(EnvioAgendaService.MODELO_PADRAO)) m = null;
+        // padrao (atual ou o anterior a v11) e gravado como null: acompanha as mudancas do padrao
+        if (m != null && (m.equals(EnvioAgendaService.MODELO_PADRAO) || m.equals(EnvioAgendaService.MODELO_PADRAO_ANTERIOR)))
+            m = null;
         Usuario u = s.usuario();
         String novo = m;
         if (java.util.Objects.equals(novo, u.getModeloMensagemAgenda())) return;

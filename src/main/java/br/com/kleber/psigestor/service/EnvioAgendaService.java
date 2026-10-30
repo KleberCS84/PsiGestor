@@ -19,7 +19,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -33,6 +35,11 @@ import java.util.stream.Collectors;
  */
 public class EnvioAgendaService {
     public static final String MODELO_PADRAO = """
+            Olá, {paciente}! Seguem suas sessões de {periodo} com {profissional}:
+            {lista}
+            Se precisar remarcar, é só me avisar por aqui.""";
+    /** Padrao ate a v11: quem o gravou passa para o novo (Database.migrar e alterarModeloMensagem). */
+    public static final String MODELO_PADRAO_ANTERIOR = """
             Olá, {paciente}! Seguem seus próximos horários com {profissional}:
             {lista}
             Se precisar remarcar, é só me avisar por aqui.""";
@@ -40,6 +47,7 @@ public class EnvioAgendaService {
     static final int DIAS_MAXIMOS_CONSULTA = 366;
     private static final String[] DIAS = {"seg", "ter", "qua", "qui", "sex", "sáb", "dom"};
     private static final DateTimeFormatter DIA_MES = DateTimeFormatter.ofPattern("dd/MM");
+    private static final DateTimeFormatter DIA_MES_ANO = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter ICS_UTC = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
     private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
@@ -84,11 +92,21 @@ public class EnvioAgendaService {
     /** Hoje pelo relogio do contexto (atalhos de periodo da tela). */
     public LocalDate hoje() { return ctx.hoje(); }
 
-    /** Visao geral (pacienteId null) ou de um paciente; status null = todos. Ordem por data e hora. */
-    public List<Atendimento> consultar(Integer pacienteId, LocalDate de, LocalDate ateInclusive, StatusAtendimento status) {
+    /** Agora pelo relogio do contexto (a tela decide se o convite .ics tem o que levar). */
+    public LocalDateTime agora() { return ctx.agoraLocal(); }
+
+    /** Visao geral (pacienteId null) ou de um paciente; status: os marcados (pelo menos um). Ordem por data e hora. */
+    public List<Atendimento> consultar(Integer pacienteId, LocalDate de, LocalDate ateInclusive,
+                                       Set<StatusAtendimento> status) {
         ctx.exigirSessao();
         validarPeriodo(de, ateInclusive);
-        return ctx.atendimentos.consultar(pacienteId, de.atStartOfDay(), ateInclusive.plusDays(1).atStartOfDay(), status);
+        return ctx.atendimentos.consultar(pacienteId, de.atStartOfDay(), ateInclusive.plusDays(1).atStartOfDay(),
+                exigirStatus(status));
+    }
+
+    private static EnumSet<StatusAtendimento> exigirStatus(Set<StatusAtendimento> status) {
+        if (status == null || status.isEmpty()) throw new RegraNegocioException("Marque pelo menos um status.");
+        return EnumSet.copyOf(status);
     }
 
     private static void validarPeriodo(LocalDate de, LocalDate ate) {
@@ -99,7 +117,7 @@ public class EnvioAgendaService {
     }
 
     /** Relida do banco pelo paciente: a lista da tela nunca entra na mensagem (sigilo). */
-    public EnvioAgenda preparar(int pacienteId, LocalDate de, LocalDate ateInclusive, StatusAtendimento status) {
+    public EnvioAgenda preparar(int pacienteId, LocalDate de, LocalDate ateInclusive, Set<StatusAtendimento> status) {
         Usuario usuario = ctx.usuarioLogado();
         Paciente p = ctx.pacienteService.buscar(pacienteId);
         List<Atendimento> lista = consultar(pacienteId, de, ateInclusive, status).stream()
@@ -107,33 +125,54 @@ public class EnvioAgendaService {
                 .toList();
         if (lista.isEmpty()) throw new RegraNegocioException("Nenhum atendimento no período para enviar.");
         String modelo = usuario.getModeloMensagemAgenda() == null ? MODELO_PADRAO : usuario.getModeloMensagemAgenda();
-        return new EnvioAgenda(p, lista, montarMensagem(modelo, p, lista));
+        // um status marcado: a linha nao repete o obvio; dois ou mais: cada linha diz o seu
+        return new EnvioAgenda(p, lista, montarMensagem(modelo, p, lista, de, ateInclusive, status.size() > 1));
     }
 
     /** Uma passada so: um nome com "{lista}" dentro nao e substituido de novo. */
-    static String montarMensagem(String modelo, Paciente p, List<Atendimento> lista) {
+    static String montarMensagem(String modelo, Paciente p, List<Atendimento> lista, LocalDate de, LocalDate ate,
+                                 boolean comStatus) {
         List<String> profissionais = lista.stream().map(Atendimento::getProfissionalNome).distinct().toList();
         boolean variosProfissionais = profissionais.size() > 1;
-        String linhas = lista.stream().map(a -> linha(a, variosProfissionais)).collect(Collectors.joining("\n"));
+        String linhas = lista.stream().map(a -> linha(a, variosProfissionais, comStatus))
+                .collect(Collectors.joining("\n"));
         String nomesProf = String.join(" e ", profissionais);
+        String periodo = periodo(de, ate);
         StringBuilder sb = new StringBuilder();
         int i = 0;
         while (i < modelo.length()) {
             if (modelo.startsWith("{paciente}", i)) { sb.append(p.getNome()); i += "{paciente}".length(); }
             else if (modelo.startsWith("{profissional}", i)) { sb.append(nomesProf); i += "{profissional}".length(); }
+            else if (modelo.startsWith("{periodo}", i)) { sb.append(periodo); i += "{periodo}".length(); }
             else if (modelo.startsWith("{lista}", i)) { sb.append(linhas); i += "{lista}".length(); }
             else sb.append(modelo.charAt(i++));
         }
         return sb.toString();
     }
 
-    /** "• qua, 05/11 às 14:00 (online)"; dia da semana sem o ponto que o Locale poe ("qua."). */
-    static String linha(Atendimento a, boolean comProfissional) {
+    /** "01/10 a 31/10"; atravessando o ano leva o ano ("15/12/2026 a 14/01/2027"), senao seria ambiguo. */
+    static String periodo(LocalDate de, LocalDate ate) {
+        DateTimeFormatter f = de.getYear() == ate.getYear() ? DIA_MES : DIA_MES_ANO;
+        return de.format(f) + " a " + ate.format(f);
+    }
+
+    /** "• qua, 05/11 às 14:00 (online) - realizada"; dia da semana sem o ponto que o Locale poe ("qua."). */
+    static String linha(Atendimento a, boolean comProfissional, boolean comStatus) {
         LocalDateTime i = a.getInicio();
         return "• " + diaDaSemana(i.toLocalDate()) + ", " + i.format(DIA_MES) + " às " + i.format(HORA)
                 + " (" + (a.getModalidade() == Modalidade.ONLINE ? "online" : "presencial") + ")"
-                + (comProfissional ? " com " + a.getProfissionalNome() : "");
+                + (comProfissional ? " com " + a.getProfissionalNome() : "")
+                + (comStatus ? " - " + a.getStatus().rotuloParaPaciente() : "");
     }
+
+    /** Convite de calendario so faz sentido para sessao futura que vai acontecer (agendada/confirmada). */
+    public static boolean entraNoConvite(Atendimento a, LocalDateTime agora) {
+        return a.getInicio().isAfter(agora)
+                && (a.getStatus() == StatusAtendimento.AGENDADO || a.getStatus() == StatusAtendimento.CONFIRMADO);
+    }
+
+    /** Arquivo gravado e quantos atendimentos da lista ficaram de fora (passados ou cancelados). */
+    public record ConviteIcs(Path arquivo, int incluidos, int deFora) { }
 
     /** Dia da semana abreviado (tela e mensagem usam o mesmo texto). */
     public static String diaDaSemana(LocalDate d) { return DIAS[d.getDayOfWeek().getValue() - 1]; }
@@ -162,10 +201,12 @@ public class EnvioAgendaService {
             throw new RegraNegocioException("Paciente sem e-mail válido. Corrija em Pacientes > Editar.");
     }
 
-    private void auditar(EnvioAgenda e, Canal canal) {
+    private void auditar(EnvioAgenda e, Canal canal) { auditar(e, canal, e.atendimentos().size()); }
+
+    private void auditar(EnvioAgenda e, Canal canal, int quantidade) {
         // canal e quantidade: o texto (nomes, horarios) nao vai para a trilha
         ctx.auditar("ENVIO_AGENDA_PACIENTE", "paciente", e.paciente().getId(),
-                "canal: " + canal.log + "; atendimentos: " + e.atendimentos().size());
+                "canal: " + canal.log + "; atendimentos: " + quantidade);
     }
 
     /** texto: a mensagem conferida (e talvez ajustada) na previa da tela. */
@@ -190,24 +231,31 @@ public class EnvioAgendaService {
         return texto;
     }
 
-    /** Convite para anexar: nome sem dado do paciente e CREATE_NEW (nunca sobrescreve). */
-    public Path salvarIcs(EnvioAgenda e, Path pasta) {
+    /**
+     * Convite para anexar: so atendimentos futuros agendados/confirmados (entraNoConvite).
+     * Nome sem dado do paciente e CREATE_NEW (nunca sobrescreve).
+     */
+    public ConviteIcs salvarIcs(EnvioAgenda e, Path pasta) {
         exigirPodeEnviar(e, Canal.ICS);
-        String ics = gerarIcs(e.atendimentos(), ctx.zona(), ctx.agora());
+        LocalDateTime agora = ctx.agoraLocal();
+        List<Atendimento> futuros = e.atendimentos().stream().filter(a -> entraNoConvite(a, agora)).toList();
+        if (futuros.isEmpty())
+            throw new RegraNegocioException("Nenhum atendimento futuro para o convite (passados ou cancelados não entram).");
+        String ics = gerarIcs(futuros, ctx.zona(), ctx.agora());
         Path arq = pasta.resolve("horarios_" + ctx.agoraLocal().format(CARIMBO) + "_"
                 + BackupService.sufixoAleatorio() + ".ics");
         try {
             Files.createDirectories(pasta);
             // log e arquivo juntos: arquivo que nao foi gravado desfaz o log
             ctx.transacao(() -> {
-                auditar(e, Canal.ICS);
+                auditar(e, Canal.ICS, futuros.size());
                 try {
                     Files.writeString(arq, ics, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
                 } catch (IOException ex) {
                     throw new UncheckedIOException(ex);
                 }
             });
-            return arq;
+            return new ConviteIcs(arq, futuros.size(), e.atendimentos().size() - futuros.size());
         } catch (IOException | UncheckedIOException ex) {
             // caminho e mensagem do sistema ficam fora da tela (podem expor a pasta do usuario)
             throw new RegraNegocioException("Não foi possível gravar o convite nessa pasta. Escolha outra.");

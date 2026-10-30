@@ -17,7 +17,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,6 +29,8 @@ class EnvioAgendaTest {
     private static final ZoneId SAO_PAULO = ZoneId.of("America/Sao_Paulo");
     private static final LocalDate HOJE = LocalDate.of(2026, 10, 12);   // segunda-feira
     private static final LocalDate ATE_30 = HOJE.plusDays(30);
+    private static final Set<StatusAtendimento> SO_AGENDADO = EnumSet.of(StatusAtendimento.AGENDADO);
+    private static final Set<StatusAtendimento> TODOS = EnumSet.allOf(StatusAtendimento.class);
 
     @TempDir Path tmp;
     Contexto ctx;
@@ -70,27 +74,27 @@ class EnvioAgendaTest {
     }
 
     private EnvioAgenda prepararJoao() {
-        return ctx.envioAgenda.preparar(joao.getId(), HOJE, ATE_30, StatusAtendimento.AGENDADO);
+        return ctx.envioAgenda.preparar(joao.getId(), HOJE, ATE_30, SO_AGENDADO);
     }
 
     // ---------- filtro ----------
     @Test
     void filtroPorPacienteEPeriodo() {
-        List<Atendimento> doJoao = ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, StatusAtendimento.AGENDADO);
+        List<Atendimento> doJoao = ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, SO_AGENDADO);
         assertEquals(List.of(joao13.getId(), joao20.getId()), doJoao.stream().map(Atendimento::getId).toList());
 
-        List<Atendimento> todosStatus = ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, null);
+        List<Atendimento> todosStatus = ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, TODOS);
         assertEquals(3, todosStatus.size());                                  // + o cancelado, em ordem
         assertEquals(StatusAtendimento.CANCELADO, todosStatus.get(1).getStatus());
 
-        List<Atendimento> geral = ctx.envioAgenda.consultar(null, HOJE, ATE_30, StatusAtendimento.AGENDADO);
+        List<Atendimento> geral = ctx.envioAgenda.consultar(null, HOJE, ATE_30, SO_AGENDADO);
         assertEquals(3, geral.size());                                         // visao geral inclui Maria
         assertEquals(3, ctx.envioAgenda.consultar(joao.getId(), HOJE, LocalDate.of(2026, 11, 30),
-                StatusAtendimento.AGENDADO).size());                           // periodo maior pega 20/11
+                SO_AGENDADO).size());                           // periodo maior pega 20/11
 
-        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, ATE_30, HOJE, null));
-        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, HOJE, null, null));
-        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, HOJE, HOJE.plusYears(2), null));
+        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, ATE_30, HOJE, TODOS));
+        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, HOJE, null, TODOS));
+        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(null, HOJE, HOJE.plusYears(2), TODOS));
     }
 
     @Test
@@ -107,9 +111,9 @@ class EnvioAgendaTest {
 
     // ---------- mensagem ----------
     @Test
-    void mensagemComListaNoFormatoCerto() {
+    void mensagemComUmStatusNaoMostraStatus() {
         assertEquals("""
-                Olá, Joao Lima! Seguem seus próximos horários com Ana Souza:
+                Olá, Joao Lima! Seguem suas sessões de 12/10 a 11/11 com Ana Souza:
                 • ter, 13/10 às 14:00 (presencial)
                 • ter, 20/10 às 09:00 (online)
                 Se precisar remarcar, é só me avisar por aqui.""", prepararJoao().mensagem());
@@ -129,7 +133,112 @@ class EnvioAgendaTest {
         assertEquals(2, e.atendimentos().size());
         // nome com marcador nao e substituido de novo (uma passada so)
         Paciente esperto = new Paciente("{lista}", null, null);
-        assertEquals("Olá, {lista}!", EnvioAgendaService.montarMensagem("Olá, {paciente}!", esperto, e.atendimentos()));
+        assertEquals("Olá, {lista}!", EnvioAgendaService.montarMensagem("Olá, {paciente}!", esperto, e.atendimentos(),
+                HOJE, ATE_30, false));
+    }
+
+    // ---------- varios status ----------
+    @Test
+    void filtroComDoisStatus() {
+        var agendadoOuCancelado = EnumSet.of(StatusAtendimento.AGENDADO, StatusAtendimento.CANCELADO);
+        List<Atendimento> lista = ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, agendadoOuCancelado);
+        assertEquals(List.of(StatusAtendimento.AGENDADO, StatusAtendimento.CANCELADO, StatusAtendimento.AGENDADO),
+                lista.stream().map(Atendimento::getStatus).toList());           // 13/10, 14/10 (cancelado), 20/10
+        assertEquals(1, ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30,
+                EnumSet.of(StatusAtendimento.CANCELADO)).size());
+        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30,
+                EnumSet.noneOf(StatusAtendimento.class)));
+        assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.consultar(joao.getId(), HOJE, ATE_30, null));
+    }
+
+    @Test
+    void mensagemComDoisStatusMostraStatusEmCadaLinha() {
+        EnvioAgenda e = ctx.envioAgenda.preparar(joao.getId(), HOJE, ATE_30,
+                EnumSet.of(StatusAtendimento.AGENDADO, StatusAtendimento.CANCELADO));
+        assertEquals("""
+                Olá, Joao Lima! Seguem suas sessões de 12/10 a 11/11 com Ana Souza:
+                • ter, 13/10 às 14:00 (presencial) - agendada
+                • qua, 14/10 às 08:00 (presencial) - cancelada
+                • ter, 20/10 às 09:00 (online) - agendada
+                Se precisar remarcar, é só me avisar por aqui.""", e.mensagem());
+        // status vem do que foi marcado: dois marcados, mesmo que so um apareca, as linhas dizem o status
+        EnvioAgenda soAgendados = ctx.envioAgenda.preparar(joao.getId(), HOJE, ATE_30,
+                EnumSet.of(StatusAtendimento.AGENDADO, StatusAtendimento.REALIZADO));
+        assertTrue(soAgendados.mensagem().contains("• ter, 13/10 às 14:00 (presencial) - agendada"), soAgendados.mensagem());
+    }
+
+    @Test
+    void rotulosParaPaciente() {
+        assertEquals("agendada", StatusAtendimento.AGENDADO.rotuloParaPaciente());
+        assertEquals("confirmada", StatusAtendimento.CONFIRMADO.rotuloParaPaciente());
+        assertEquals("realizada", StatusAtendimento.REALIZADO.rotuloParaPaciente());
+        assertEquals("não compareceu", StatusAtendimento.FALTOU.rotuloParaPaciente());
+        assertEquals("cancelada", StatusAtendimento.CANCELADO.rotuloParaPaciente());
+        assertEquals("FALTOU", StatusAtendimento.FALTOU.name());               // enum nao renomeado (banco)
+        assertEquals("Faltou", StatusAtendimento.FALTOU.rotulo());             // rotulo de tela continua
+    }
+
+    @Test
+    void periodoNaMensagem() {
+        assertEquals("01/10 a 31/10", EnvioAgendaService.periodo(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)));
+        assertEquals("15/12/2026 a 14/01/2027",
+                EnvioAgendaService.periodo(LocalDate.of(2026, 12, 15), LocalDate.of(2027, 1, 14)));
+    }
+
+    @Test
+    void icsSemCanceladosESemPassados() throws Exception {
+        autorizarContato(joao);
+        // passado e realizado (dentro dos 30 dias retroativos do agendamento)
+        Atendimento passado = agendar(joao, LocalDateTime.of(2026, 10, 5, 10, 0), Modalidade.PRESENCIAL);
+        ctx.agenda.alterarStatus(passado.getId(), StatusAtendimento.REALIZADO);
+        EnvioAgenda e = ctx.envioAgenda.preparar(joao.getId(), LocalDate.of(2026, 10, 1), ATE_30, TODOS);
+        assertEquals(4, e.atendimentos().size());   // 05/10 realizado, 13/10, 14/10 cancelado, 20/10
+
+        var convite = ctx.envioAgenda.salvarIcs(e, tmp.resolve("ics"));
+        assertEquals(2, convite.incluidos());
+        assertEquals(2, convite.deFora());
+        String ics = Files.readString(convite.arquivo());
+        assertEquals(2, ics.split("BEGIN:VEVENT", -1).length - 1);
+        assertTrue(ics.contains("DTSTART:20261013T170000Z"), ics);
+        assertTrue(ics.contains("DTSTART:20261020T120000Z"), ics);
+        assertFalse(ics.contains("DTSTART:20261014"), "cancelado entrou no convite");
+        assertFalse(ics.contains("DTSTART:20261005"), "passado entrou no convite");
+        assertEquals("canal: ics; atendimentos: 2", ctx.logs.ultimos(1).get(0).detalhe());
+
+        // so passados/cancelados: nada para o convite
+        EnvioAgenda semFuturo = ctx.envioAgenda.preparar(joao.getId(), HOJE, ATE_30,
+                EnumSet.of(StatusAtendimento.CANCELADO));
+        var ex = assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.salvarIcs(semFuturo, tmp.resolve("ics2")));
+        assertTrue(ex.getMessage().contains("passados ou cancelados"), ex.getMessage());
+        assertFalse(Files.exists(tmp.resolve("ics2")));
+
+        LocalDateTime agora = ctx.envioAgenda.agora();
+        assertTrue(EnvioAgendaService.entraNoConvite(joao13, agora));
+        assertFalse(EnvioAgendaService.entraNoConvite(passado, agora));
+    }
+
+    @Test
+    void modeloPadraoAntigoMigradoEPersonalizadoPreservado() throws Exception {
+        Usuario bia = ctx.autenticacao.cadastrar("Bia Recepcao", "bia", "senhaBia1234".toCharArray(), Papel.SECRETARIA, null, 0);
+        // como estava gravado antes da v11: o padrao antigo literal (Ana) e um modelo proprio (Bia)
+        ctx.usuarios.atualizarModeloMensagem(ana.getId(), EnvioAgendaService.MODELO_PADRAO_ANTERIOR);
+        ctx.usuarios.atualizarModeloMensagem(bia.getId(), "Oi {paciente}! {lista}");
+        ctx.close();
+        String url = "jdbc:sqlite:" + tmp.resolve("teste.db");
+        try (var con = java.sql.DriverManager.getConnection(url); var st = con.createStatement()) {
+            st.execute("PRAGMA user_version = 10");
+        }
+        ctx = new Contexto(url);   // migracao v11
+        ctx.setRelogio(Clock.fixed(HOJE.atStartOfDay(SAO_PAULO).toInstant(), SAO_PAULO));
+        assertNull(ctx.usuarios.buscar(ana.getId()).orElseThrow().getModeloMensagemAgenda());
+        assertEquals("Oi {paciente}! {lista}", ctx.usuarios.buscar(bia.getId()).orElseThrow().getModeloMensagemAgenda());
+
+        ctx.autenticacao.entrar("ana", "senhaForte12".toCharArray());
+        assertTrue(prepararJoao().mensagem().startsWith("Olá, Joao Lima! Seguem suas sessões de 12/10 a 11/11"));
+        // quem digita o padrao antigo de novo tambem fica no padrao (null), acompanhando o novo
+        ctx.autenticacao.alterarModeloMensagem("Horários: {lista}");
+        ctx.autenticacao.alterarModeloMensagem(EnvioAgendaService.MODELO_PADRAO_ANTERIOR);
+        assertNull(ctx.usuarios.buscar(ana.getId()).orElseThrow().getModeloMensagemAgenda());
     }
 
     @Test
@@ -173,7 +282,7 @@ class EnvioAgendaTest {
         Paciente pedro = ctx.pacienteService.salvar(new Paciente("Pedro Alves", null, null));
         agendar(pedro, LocalDateTime.of(2026, 10, 15, 10, 0), Modalidade.PRESENCIAL);
         autorizarContato(pedro);
-        EnvioAgenda e = ctx.envioAgenda.preparar(pedro.getId(), HOJE, ATE_30, StatusAtendimento.AGENDADO);
+        EnvioAgenda e = ctx.envioAgenda.preparar(pedro.getId(), HOJE, ATE_30, SO_AGENDADO);
         var zap = assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.enviarWhatsApp(e, e.mensagem()));
         assertTrue(zap.getMessage().contains("telefone") && zap.getMessage().contains("Pacientes > Editar"), zap.getMessage());
         var mail = assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.enviarEmail(e, e.mensagem()));
@@ -230,8 +339,8 @@ class EnvioAgendaTest {
 
         // arquivo: nome sem dado do paciente e nunca sobrescreve
         Path pasta = tmp.resolve("convites");
-        Path a1 = ctx.envioAgenda.salvarIcs(prepararJoao(), pasta);
-        Path a2 = ctx.envioAgenda.salvarIcs(prepararJoao(), pasta);
+        Path a1 = ctx.envioAgenda.salvarIcs(prepararJoao(), pasta).arquivo();
+        Path a2 = ctx.envioAgenda.salvarIcs(prepararJoao(), pasta).arquivo();
         assertNotEquals(a1, a2);
         try (Stream<Path> arquivos = Files.list(pasta)) { assertEquals(2, arquivos.count()); }
         assertTrue(a1.getFileName().toString().startsWith("horarios_"), a1.toString());
@@ -270,7 +379,7 @@ class EnvioAgendaTest {
     @Test
     void periodoSemAtendimentosNaoMontaMensagem() {
         var ex = assertThrows(RegraNegocioException.class, () -> ctx.envioAgenda.preparar(
-                maria.getId(), LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), StatusAtendimento.AGENDADO));
+                maria.getId(), LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), SO_AGENDADO));
         assertTrue(ex.getMessage().contains("Nenhum atendimento"), ex.getMessage());
     }
 }

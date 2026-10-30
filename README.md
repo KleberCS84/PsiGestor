@@ -1,5 +1,5 @@
 # PsiGestor
-✅ 208 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto ([REVISAO.md](docs/REVISAO.md), [REVISAO_FINAL.md](docs/REVISAO_FINAL.md))
+✅ 218 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto ([REVISAO.md](docs/REVISAO.md), [REVISAO_FINAL.md](docs/REVISAO_FINAL.md))
 
 ⬇️ **[Baixar a versão de piloto (Windows)](https://github.com/KleberCS84/PsiGestor/releases/latest)** · uso apenas com dados fictícios
 
@@ -21,7 +21,7 @@ O objetivo técnico é mostrar um sistema com regras de negócio reais, em camad
 |---|---|
 | **Painel** | Visão do dia: atendimentos, aguardando, aniversariantes, faturamento do mês, taxa de faltas, recibos pendentes |
 | **Agenda** | Agendamento com checagem de conflito (por profissional e por paciente), máquina de estados do atendimento, forma de pagamento, recibo; atendimento online exige consentimento registrado |
-| **Consultar agenda** | Horários por paciente, período (próximos 30 dias, este mês, próximo mês ou personalizado) e status; envio ao paciente por WhatsApp, e-mail, cópia ou convite .ics, com consentimento de contato exigido, só os horários dele e auditoria sem o texto. Modelo da mensagem editável em Preferências |
+| **Consultar agenda** | Horários por paciente, período (próximos 30 dias, este mês, próximo mês ou personalizado) e um ou mais status; envio ao paciente por WhatsApp, e-mail, cópia ou convite .ics (só sessões futuras agendadas/confirmadas), com consentimento de contato exigido, só os horários dele e auditoria sem o texto. Com mais de um status, cada linha da mensagem diz o status ("realizada", "não compareceu"...). Modelo da mensagem editável em Preferências, com {paciente}, {profissional}, {periodo} e {lista} |
 | **Pacientes** | Cadastro com validação de CPF e telefone, responsável legal obrigatório para menores, consentimentos com histórico, arquivamento (sem exclusão), exportação de dados do titular, anonimização após o prazo de guarda |
 | **Prontuário** | Evoluções cifradas, append-only; correção só por retificação; registros de outro psicólogo aparecem como sigilosos |
 | **Financeiro** | Faturado, recebido, a receber, faltas e repasse por profissional |

@@ -21,9 +21,12 @@ import javafx.stage.DirectoryChooser;
 import java.awt.Desktop;
 import java.io.File;
 import java.net.URI;
-import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -39,8 +42,15 @@ public class ConsultaAgendaView {
     private final ComboBox<PeriodoConsulta> periodo = new ComboBox<>();
     private final DatePicker de = new DatePicker();
     private final DatePicker ate = new DatePicker();
-    private final ComboBox<StatusAtendimento> status = new ComboBox<>();
+    /** Status marcados (nunca vazio); as caixas so refletem este conjunto. */
+    private EnumSet<StatusAtendimento> statusMarcados = EnumSet.of(StatusAtendimento.AGENDADO);
+    private final Map<StatusAtendimento, CheckBox> caixasStatus = new EnumMap<>(StatusAtendimento.class);
+    private final CheckBox todos = new CheckBox("Todos");
+    private boolean atualizandoCaixas;
     private final Label total = new Label();
+    private final Label semConvite = Ui.aviso(SEM_CONVITE);
+    static final String SEM_CONVITE = "Convite .ics indisponível: nenhum atendimento futuro e não cancelado na lista "
+            + "(passados, realizados, faltas e cancelados não entram no convite).";
     private final TableColumn<Atendimento, String> colPaciente = Ui.col("Paciente", Atendimento::getPacienteNome, 180);
     private final List<Button> envios;
     /** De e Ate mudam um de cada vez: sem isto, o intervalo intermediario (invertido) daria erro. */
@@ -70,12 +80,13 @@ public class ConsultaAgendaView {
         de.setOnAction(e -> carregar());
         ate.setOnAction(e -> carregar());
 
-        status.getItems().add(null);   // null = todos
-        status.getItems().addAll(StatusAtendimento.values());
-        Ui.rotular(status, StatusAtendimento::rotulo);
-        status.setPromptText("Todos os status");
-        status.setValue(StatusAtendimento.AGENDADO);
-        status.setOnAction(e -> carregar());
+        for (StatusAtendimento s : StatusAtendimento.values()) {
+            CheckBox c = new CheckBox(s.rotulo());
+            c.selectedProperty().addListener((o, antes, marcado) -> aoMarcar(s, marcado));
+            caixasStatus.put(s, c);
+        }
+        todos.selectedProperty().addListener((o, antes, marcado) -> aoMarcar(null, marcado));
+        atualizarCaixas();
 
         tabela.getColumns().add(Ui.col("Data", a -> a.getInicio().format(Ui.DATA), 100));
         tabela.getColumns().add(Ui.col("Dia", a -> EnvioAgendaService.diaDaSemana(a.getInicio().toLocalDate()), 60));
@@ -89,13 +100,51 @@ public class ConsultaAgendaView {
         aplicarPeriodo();
         return Ui.tela(Ui.titulo("Consultar agenda"),
                 Ui.linha(new Label("Paciente:"), busca, paciente),
-                Ui.linha(new Label("Período:"), periodo, de, new Label("até"), ate,
-                        new Label("Status:"), status),
+                Ui.linha(new Label("Período:"), periodo, de, new Label("até"), ate),
+                linhaStatus(),
                 tabela,
                 Ui.linha(total),
-                new VBox(6, Ui.linha(envios.toArray(Button[]::new)),
+                new VBox(6, Ui.linha(envios.toArray(Button[]::new)), semConvite,
                         Ui.aviso("Para enviar, escolha UM paciente. A mensagem leva só os horários dele e exige "
                                 + "o consentimento de contato por WhatsApp/e-mail (LGPD). Confira o texto antes de enviar.")));
+    }
+
+    private Node linhaStatus() {
+        var linha = Ui.linha(new Label("Status:"), todos);
+        linha.getChildren().addAll(caixasStatus.values());
+        return linha;
+    }
+
+    private void aoMarcar(StatusAtendimento s, boolean marcado) {
+        if (atualizandoCaixas) return;
+        statusMarcados = marcar(statusMarcados, s, marcado);
+        atualizarCaixas();   // desfaz o desmarcar do ultimo e acerta "Todos"
+        carregar();
+    }
+
+    private void atualizarCaixas() {
+        atualizandoCaixas = true;
+        try {
+            caixasStatus.forEach((s, c) -> c.setSelected(statusMarcados.contains(s)));
+            todos.setSelected(statusMarcados.size() == StatusAtendimento.values().length);
+        } finally {
+            atualizandoCaixas = false;
+        }
+    }
+
+    /**
+     * Regra das caixas de status (s null = "Todos"): marcar "Todos" marca tudo; desmarca-lo com tudo
+     * marcado volta ao padrao (so Agendado); desmarcar o ultimo nao vale (pelo menos um fica marcado).
+     */
+    static EnumSet<StatusAtendimento> marcar(EnumSet<StatusAtendimento> atual, StatusAtendimento s, boolean marcado) {
+        if (s == null) {
+            if (marcado) return EnumSet.allOf(StatusAtendimento.class);
+            return atual.size() == StatusAtendimento.values().length ? EnumSet.of(StatusAtendimento.AGENDADO)
+                    : EnumSet.copyOf(atual);
+        }
+        EnumSet<StatusAtendimento> novo = EnumSet.copyOf(atual);
+        if (marcado) novo.add(s); else novo.remove(s);
+        return novo.isEmpty() ? EnumSet.copyOf(atual) : novo;
     }
 
     private void carregarPacientes(String texto) {
@@ -133,12 +182,21 @@ public class ConsultaAgendaView {
         Paciente p = paciente.getValue();
         colPaciente.setVisible(p == null);
         boolean ok = Ui.executar(() -> tabela.getItems().setAll(
-                ctx.envioAgenda.consultar(p == null ? null : p.getId(), de.getValue(), ate.getValue(), status.getValue())));
+                ctx.envioAgenda.consultar(p == null ? null : p.getId(), de.getValue(), ate.getValue(), statusMarcados)));
         if (!ok) tabela.getItems().clear();
         int n = tabela.getItems().size();
         total.setText("Total: " + n + (n == 1 ? " atendimento" : " atendimentos"));
         envios.forEach(b -> b.setDisable(p == null || n == 0));
+        // convite so com sessao futura que vai acontecer; o service confere de novo ao salvar
+        LocalDateTime agora = ctx.envioAgenda.agora();
+        boolean temFuturo = tabela.getItems().stream().anyMatch(a -> EnvioAgendaService.entraNoConvite(a, agora));
+        boolean semIcs = p != null && n > 0 && !temFuturo;
+        if (semIcs) botaoIcs().setDisable(true);
+        semConvite.setVisible(semIcs);
+        semConvite.setManaged(semIcs);
     }
+
+    private Button botaoIcs() { return envios.get(3); }
 
     private Button botaoEnvio(String texto, Canal canal) {
         Button b = new Button(texto);
@@ -153,7 +211,7 @@ public class ConsultaAgendaView {
         if (!garantirConsentimento(p)) return;
         EnvioAgenda[] envio = {null};
         if (!Ui.executar(() -> {
-            envio[0] = ctx.envioAgenda.preparar(p.getId(), de.getValue(), ate.getValue(), status.getValue());
+            envio[0] = ctx.envioAgenda.preparar(p.getId(), de.getValue(), ate.getValue(), statusMarcados);
             ctx.envioAgenda.verificar(envio[0], canal);   // telefone/e-mail errado: avisa antes da previa
         })) return;
         EnvioAgenda e = envio[0];
@@ -206,10 +264,19 @@ public class ConsultaAgendaView {
         File pasta = dc.showDialog(tabela.getScene().getWindow());
         if (pasta == null) return;
         Ui.executar(() -> {
-            Path arq = ctx.envioAgenda.salvarIcs(e, pasta.toPath());
-            Ui.info("Convite salvo:\n" + arq + "\n\nAnexe ao e-mail ou à mensagem do paciente. "
+            var convite = ctx.envioAgenda.salvarIcs(e, pasta.toPath());
+            String fora = foraDoConvite(convite.deFora());
+            Ui.info("Convite salvo:\n" + convite.arquivo() + "\n\n" + (fora.isEmpty() ? "" : fora + "\n\n")
+                    + "Anexe ao e-mail ou à mensagem do paciente. "
                     + "Ele não contém dados clínicos, só data, hora e profissional.");
         });
+    }
+
+    /** "2 atendimentos não entraram no convite (passados ou cancelados)"; vazio se nenhum ficou de fora. */
+    static String foraDoConvite(int n) {
+        if (n <= 0) return "";
+        return n == 1 ? "1 atendimento não entrou no convite (passado ou cancelado)."
+                : n + " atendimentos não entraram no convite (passados ou cancelados).";
     }
 
     /** Navegador/cliente de e-mail fora da thread do JavaFX (AWT e JavaFX nao podem se travar). */

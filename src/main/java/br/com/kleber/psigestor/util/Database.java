@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -36,9 +37,16 @@ public class Database implements AutoCloseable {
      *  v8: usuario.termos_versao (0 = nunca aceitou) e usuario.termos_aceitos_em (aceite dos termos de uso)
      *  v9: usuario.minutos_inatividade (existentes = 15) e atendimento.observacao
      *  v10: usuario.modelo_mensagem_agenda (null = modelo padrao do envio de horarios)
+     *  v11: modelo gravado igual ao padrao antigo vira null (passa ao padrao novo, com {periodo});
+     *       modelo personalizado fica como esta
      * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 10;
+    public static final int VERSAO_ESQUEMA = 11;
+    /** Padrao do envio de horarios ate a v10 (mesmo texto de EnvioAgendaService.MODELO_PADRAO_ANTERIOR). */
+    static final String MODELO_AGENDA_V10 = """
+            Olá, {paciente}! Seguem seus próximos horários com {profissional}:
+            {lista}
+            Se precisar remarcar, é só me avisar por aqui.""";
     private static final String PREFIXO_URL = "jdbc:sqlite:";
 
     private final String url;
@@ -150,6 +158,13 @@ public class Database implements AutoCloseable {
             }
             if (versao < 10) {
                 adicionarColunaSeFaltar(st, "usuario", "modelo_mensagem_agenda", "TEXT");
+            }
+            if (versao < 11) {
+                try (PreparedStatement ps = conexao.prepareStatement(
+                        "UPDATE usuario SET modelo_mensagem_agenda = NULL WHERE modelo_mensagem_agenda = ?")) {
+                    ps.setString(1, MODELO_AGENDA_V10);
+                    ps.executeUpdate();
+                }
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));

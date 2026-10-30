@@ -13,6 +13,14 @@ public class PreferenciasDialog {
 
     public PreferenciasDialog(Contexto ctx) { this.ctx = ctx; }
 
+    static final String AVISO_PERIODO = "Novo: o marcador {periodo} mostra o período consultado (ex.: 01/10 a 31/10). "
+            + "Seu modelo personalizado foi mantido; acrescente {periodo} se quiser.";
+
+    /** Modelo personalizado (o padrao e null) que ainda nao usa {periodo}. */
+    static boolean precisaAvisarPeriodo(String modeloGravado) {
+        return modeloGravado != null && !modeloGravado.contains("{periodo}");
+    }
+
     static String rotulo(int minutos) {
         return minutos + " minutos" + (minutos == Contexto.PADRAO_INATIVIDADE_MIN ? " (padrão)" : "");
     }
@@ -37,15 +45,22 @@ public class PreferenciasDialog {
         modelo.setPrefColumnCount(40);
         Button padrao = new Button("Restaurar padrão");
         padrao.setOnAction(e -> modelo.setText(EnvioAgendaService.MODELO_PADRAO));
-        Label legenda = Ui.aviso("Mensagem de horários (Consultar agenda). Use {paciente}, {profissional} e {lista}; "
-                + "{lista} é obrigatório e vira uma linha por atendimento, ex.: \"• qua, 05/11 às 14:00 (online)\".");
+        Label legenda = Ui.aviso("Mensagem de horários (Consultar agenda). Use {paciente}, {profissional}, {periodo} "
+                + "(ex.: 01/10 a 31/10) e {lista}; {lista} é obrigatório e vira uma linha por atendimento, ex.: "
+                + "\"• qua, 05/11 às 14:00 (online)\". Com mais de um status marcado, cada linha mostra o status.");
         legenda.setMaxWidth(420);
+        VBox avisos = new VBox(6, legenda);
+        if (precisaAvisarPeriodo(atual)) {
+            Label novo = Ui.aviso(AVISO_PERIODO);
+            novo.setMaxWidth(420);
+            avisos.getChildren().add(0, novo);
+        }
 
         Dialog<ButtonType> d = new Dialog<>();
         d.setTitle("Preferências");
         d.setHeaderText(null);
         d.getDialogPane().setContent(new VBox(8, g, aviso, new Separator(),
-                new Label("Mensagem de horários ao paciente"), modelo, Ui.linha(padrao), legenda));
+                new Label("Mensagem de horários ao paciente"), modelo, Ui.linha(padrao), avisos));
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
