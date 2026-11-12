@@ -21,6 +21,12 @@ public class Atendimento {
     /** Administrativa e em claro (secretaria ve): nada clinico, que vai cifrado no prontuario. */
     private String observacao;
 
+    /** Agendamento em lote: UUID da serie; null = atendimento avulso. */
+    private String serieId;
+    private Integer numeroNaSerie;
+    /** Somente leitura: quantas sessoes a serie tem (inclui canceladas); 0 = avulso. */
+    private int totalNaSerie;
+
     // Campos apenas para exibicao (preenchidos por JOIN no DAO)
     private String pacienteNome;
     private String profissionalNome;
@@ -61,6 +67,17 @@ public class Atendimento {
     public void setPercentualRepasseClinica(Double p) { this.percentualRepasseClinica = p; }
     public String getObservacao() { return observacao; }
     public void setObservacao(String observacao) { this.observacao = observacao; }
+    public String getSerieId() { return serieId; }
+    public void setSerieId(String serieId) { this.serieId = serieId; }
+    public Integer getNumeroNaSerie() { return numeroNaSerie; }
+    public void setNumeroNaSerie(Integer n) { this.numeroNaSerie = n; }
+    public int getTotalNaSerie() { return totalNaSerie; }
+    public void setTotalNaSerie(int t) { this.totalNaSerie = t; }
+    public boolean isDeSerie() { return serieId != null; }
+    /** "sessão 3 de 10"; vazio se nao faz parte de uma serie. */
+    public String rotuloSerie() {
+        return serieId == null || numeroNaSerie == null ? "" : "sessão " + numeroNaSerie + " de " + totalNaSerie;
+    }
     public String getPacienteNome() { return pacienteNome; }
     public void setPacienteNome(String n) { this.pacienteNome = n; }
     public String getProfissionalNome() { return profissionalNome; }

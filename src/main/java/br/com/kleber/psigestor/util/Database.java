@@ -39,9 +39,10 @@ public class Database implements AutoCloseable {
      *  v10: usuario.modelo_mensagem_agenda (null = modelo padrao do envio de horarios)
      *  v11: modelo gravado igual ao padrao antigo vira null (passa ao padrao novo, com {periodo});
      *       modelo personalizado fica como esta
+     *  v12: atendimento.serie_id + numero_na_serie (agendamento em lote; nulos = atendimento avulso)
      * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 11;
+    public static final int VERSAO_ESQUEMA = 12;
     /** Padrao do envio de horarios ate a v10 (mesmo texto de EnvioAgendaService.MODELO_PADRAO_ANTERIOR). */
     static final String MODELO_AGENDA_V10 = """
             Olá, {paciente}! Seguem seus próximos horários com {profissional}:
@@ -165,6 +166,11 @@ public class Database implements AutoCloseable {
                     ps.setString(1, MODELO_AGENDA_V10);
                     ps.executeUpdate();
                 }
+            }
+            if (versao < 12) {
+                adicionarColunaSeFaltar(st, "atendimento", "serie_id", "TEXT");
+                adicionarColunaSeFaltar(st, "atendimento", "numero_na_serie", "INTEGER");
+                st.execute("CREATE INDEX IF NOT EXISTS idx_atendimento_serie ON atendimento(serie_id)");
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));

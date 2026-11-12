@@ -95,6 +95,7 @@ public class ConsultaAgendaView {
         tabela.getColumns().add(Ui.col("Modalidade", a -> a.getModalidade().rotulo(), 100));
         tabela.getColumns().add(Ui.col("Profissional", Atendimento::getProfissionalNome, 170));
         tabela.getColumns().add(Ui.col("Status", a -> a.getStatus().rotulo(), 100));
+        tabela.getColumns().add(Ui.col("Série", Atendimento::rotuloSerie, 110));
         tabela.getColumns().add(colPaciente);   // so na visao geral (sem paciente escolhido)
 
         aplicarPeriodo();

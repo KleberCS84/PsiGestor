@@ -17,7 +17,8 @@ public class AtendimentoDAO {
     public static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
     private static final String SELECT_BASE = """
-        SELECT a.*, p.nome AS paciente_nome, u.nome AS profissional_nome, s.nome AS servico_nome
+        SELECT a.*, p.nome AS paciente_nome, u.nome AS profissional_nome, s.nome AS servico_nome,
+               (SELECT COUNT(*) FROM atendimento x WHERE x.serie_id = a.serie_id) AS total_serie
           FROM atendimento a
           JOIN paciente p ON p.id = a.paciente_id
           JOIN usuario  u ON u.id = a.profissional_id
@@ -31,8 +32,9 @@ public class AtendimentoDAO {
     public Atendimento inserir(Atendimento a) {
         String sql = """
             INSERT INTO atendimento (paciente_id, profissional_id, servico_id, convenio_id, inicio, fim,
-                                     status, modalidade, valor, pago, forma_pagamento, recibo_emitido, observacao)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""";
+                                     status, modalidade, valor, pago, forma_pagamento, recibo_emitido, observacao,
+                                     serie_id, numero_na_serie)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, a.getPacienteId());
             ps.setInt(2, a.getProfissionalId());
@@ -47,6 +49,8 @@ public class AtendimentoDAO {
             ps.setString(11, a.getFormaPagamento());
             ps.setInt(12, a.isReciboEmitido() ? 1 : 0);
             ps.setString(13, a.getObservacao());
+            ps.setString(14, a.getSerieId());
+            JdbcUtil.setIntOuNull(ps, 15, a.getNumeroNaSerie());
             ps.executeUpdate();
             a.setId(JdbcUtil.ultimoId(ps));
             return a;
@@ -87,6 +91,19 @@ public class AtendimentoDAO {
             ps.setString(2, desde.format(FMT));
             return listar(ps);
         } catch (SQLException e) { throw new DaoException("Erro ao listar agendamentos futuros", e); }
+    }
+
+    /**
+     * Proximas sessoes da serie: mesma serie, comecam DEPOIS de "depoisDe" e ainda agendadas/confirmadas.
+     * Realizadas, faltas, canceladas e as anteriores nunca entram.
+     */
+    public List<Atendimento> listarProximosDaSerie(String serieId, LocalDateTime depoisDe) {
+        try (PreparedStatement ps = con.prepareStatement(SELECT_BASE
+                + " WHERE a.serie_id = ? AND a.inicio > ? AND a.status IN ('AGENDADO','CONFIRMADO') ORDER BY a.inicio")) {
+            ps.setString(1, serieId);
+            ps.setString(2, depoisDe.format(FMT));
+            return listar(ps);
+        } catch (SQLException e) { throw new DaoException("Erro ao listar sessões da série", e); }
     }
 
     /**
@@ -217,6 +234,9 @@ public class AtendimentoDAO {
                 double perc = rs.getDouble("percentual_repasse_clinica");
                 a.setPercentualRepasseClinica(rs.wasNull() ? null : perc);
                 a.setObservacao(rs.getString("observacao"));
+                a.setSerieId(rs.getString("serie_id"));
+                a.setNumeroNaSerie(JdbcUtil.getIntOuNull(rs, "numero_na_serie"));
+                a.setTotalNaSerie(rs.getInt("total_serie"));
                 a.setPacienteNome(rs.getString("paciente_nome"));
                 a.setProfissionalNome(rs.getString("profissional_nome"));
                 a.setServicoNome(rs.getString("servico_nome"));

@@ -160,7 +160,8 @@ public class EnvioAgendaService {
     static String linha(Atendimento a, boolean comProfissional, boolean comStatus) {
         LocalDateTime i = a.getInicio();
         return "• " + diaDaSemana(i.toLocalDate()) + ", " + i.format(DIA_MES) + " às " + i.format(HORA)
-                + " (" + (a.getModalidade() == Modalidade.ONLINE ? "online" : "presencial") + ")"
+                + " (" + (a.getModalidade() == Modalidade.ONLINE ? "online" : "presencial")
+                + (a.isDeSerie() ? ", " + a.rotuloSerie() : "") + ")"
                 + (comProfissional ? " com " + a.getProfissionalNome() : "")
                 + (comStatus ? " - " + a.getStatus().rotuloParaPaciente() : "");
     }

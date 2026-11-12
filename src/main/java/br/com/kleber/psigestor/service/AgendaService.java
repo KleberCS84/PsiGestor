@@ -7,9 +7,12 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 public class AgendaService {
     static final int DIAS_RETROATIVOS = 30;
@@ -61,6 +64,16 @@ public class AgendaService {
         a.setInicio(inicio);
         a.setFim(fim);
         a.setModalidade(modalidade);
+        aplicarValor(a, paciente, servico, usarConvenio);
+        ctx.transacao(() -> {
+            ctx.atendimentos.inserir(a);
+            ctx.auditar("AGENDAMENTO", "atendimento", a.getId());
+        });
+        return a;
+    }
+
+    /** Valor do convenio do paciente (usarConvenio) ou do servico (particular). */
+    private void aplicarValor(Atendimento a, Paciente paciente, Servico servico, boolean usarConvenio) {
         if (usarConvenio) {
             if (paciente.getConvenioId() == null)
                 throw new RegraNegocioException("Paciente não possui convênio cadastrado.");
@@ -72,11 +85,160 @@ public class AgendaService {
         } else {
             a.setValorCentavos(servico.getValorCentavos());
         }
+    }
+
+    // ------------------------------------------------------------------ agendamento em lote (series)
+
+    public static final int LOTE_MINIMO = 2;
+    public static final int LOTE_MAXIMO = 52;
+    private static final DateTimeFormatter DATA_HORA_MSG = DateTimeFormatter.ofPattern("dd/MM/yyyy 'às' HH:mm");
+
+    public enum Frequencia {
+        SEMANAL(1, "Semanal"), QUINZENAL(2, "Quinzenal");
+        private final int semanas;
+        private final String rotulo;
+        Frequencia(int semanas, String rotulo) { this.semanas = semanas; this.rotulo = rotulo; }
+        public int semanas() { return semanas; }
+        public String rotulo() { return rotulo; }
+    }
+
+    /** Alcance de um cancelamento/edicao de sessao que faz parte de uma serie. */
+    public enum EscopoSerie { SO_ESTA, ESTA_E_PROXIMAS }
+
+    public enum SituacaoPrevia { OK, CONFLITO, INVALIDA }
+
+    /** Uma linha da previa: numero (1..n), horario e se pode ser salva como esta. */
+    public record ItemPrevia(int numero, LocalDateTime inicio, LocalDateTime fim, SituacaoPrevia situacao, String motivo) {
+        public boolean ok() { return situacao == SituacaoPrevia.OK; }
+    }
+
+    /** O que e igual em todas as sessoes da serie; as datas vao a parte. duracaoMin null = a do servico. */
+    public record ParametrosLote(int pacienteId, int profissionalId, int servicoId, Integer duracaoMin,
+                                 Modalidade modalidade, boolean usarConvenio, String observacao) { }
+
+    private record Base(Paciente paciente, Usuario prof, Servico servico, String obs, int duracao,
+                        Modalidade modalidade, boolean usarConvenio) { }
+
+    /** A primeira data e a escolhida; as outras somam 1 (semanal) ou 2 (quinzenal) semanas por sessao. */
+    public static List<LocalDateTime> gerarDatas(LocalDateTime primeira, Frequencia frequencia, int total) {
+        if (primeira == null) throw new RegraNegocioException("Informe data e hora.");
+        if (frequencia == null) throw new RegraNegocioException("Informe a frequência.");
+        if (total < LOTE_MINIMO || total > LOTE_MAXIMO)
+            throw new RegraNegocioException("O número total de sessões deve ficar entre " + LOTE_MINIMO
+                    + " e " + LOTE_MAXIMO + ".");
+        List<LocalDateTime> datas = new ArrayList<>(total);
+        for (int i = 0; i < total; i++) datas.add(primeira.plusWeeks((long) i * frequencia.semanas()));
+        return datas;
+    }
+
+    private Base prepararBase(ParametrosLote p) {
+        if (p.modalidade() == null) throw new RegraNegocioException("Informe a modalidade.");
+        Paciente paciente = pacienteAgendavel(p.pacienteId());
+        Usuario prof = ctx.usuarios.listarPsicologos().stream()
+                .filter(u -> u.getId() == p.profissionalId()).findFirst()
+                .orElseThrow(() -> new RegraNegocioException("Profissional inválido."));
+        Servico servico = buscarServico(p.servicoId());
+        String obs = validarObservacao(p.observacao());
+        int duracao = validarDuracao(p.duracaoMin() == null ? servico.getDuracaoMin() : p.duracaoMin());
+        exigirConsentimentoOnline(p.pacienteId(), p.modalidade());
+        if (p.usarConvenio()) aplicarValor(new Atendimento(), paciente, servico, true);   // so valida o convenio
+        return new Base(paciente, prof, servico, obs, duracao, p.modalidade(), p.usarConvenio());
+    }
+
+    /**
+     * Previa do lote: nada e gravado. Cada data vira OK, CONFLITO (profissional ou paciente ja ocupado, ou
+     * sobreposta a outra sessao da propria serie) ou INVALIDA (fora do periodo permitido).
+     */
+    public List<ItemPrevia> previa(ParametrosLote p, List<LocalDateTime> inicios) {
+        ctx.exigirSessao();
+        if (inicios == null || inicios.isEmpty()) throw new RegraNegocioException("Nenhuma sessão para agendar.");
+        if (inicios.size() > LOTE_MAXIMO)
+            throw new RegraNegocioException("No máximo " + LOTE_MAXIMO + " sessões por série.");
+        Base b = prepararBase(p);
+        List<ItemPrevia> itens = new ArrayList<>();
+        for (int i = 0; i < inicios.size(); i++) {
+            LocalDateTime inicio = inicios.get(i);
+            if (inicio == null) throw new RegraNegocioException("Informe data e hora da sessão " + (i + 1) + ".");
+            LocalDateTime fim = inicio.plusMinutes(b.duracao());
+            try {
+                validarJanela(inicio);
+            } catch (RegraNegocioException e) {
+                itens.add(new ItemPrevia(i + 1, inicio, fim, SituacaoPrevia.INVALIDA, e.getMessage()));
+                continue;
+            }
+            String motivo = null;
+            if (ctx.atendimentos.contarConflitos(b.prof().getId(), inicio, fim, null) > 0)
+                motivo = "Profissional já tem atendimento nesse horário.";
+            else if (ctx.atendimentos.contarConflitosPaciente(b.paciente().getId(), inicio, fim, null) > 0)
+                motivo = "Paciente já tem atendimento nesse horário.";
+            else {
+                for (ItemPrevia anterior : itens) {
+                    if (anterior.situacao() != SituacaoPrevia.INVALIDA
+                            && anterior.inicio().isBefore(fim) && inicio.isBefore(anterior.fim())) {
+                        motivo = "Sobrepõe a sessão " + anterior.numero() + " desta série.";
+                        break;
+                    }
+                }
+            }
+            itens.add(new ItemPrevia(i + 1, inicio, fim,
+                    motivo == null ? SituacaoPrevia.OK : SituacaoPrevia.CONFLITO, motivo));
+        }
+        return itens;
+    }
+
+    /**
+     * Grava a serie inteira em UMA transacao: se qualquer sessao falhar (conflito, fora do periodo...), nenhuma
+     * fica gravada. Numera 1..n na ordem recebida, grava um unico log AGENDAMENTO_LOTE (so ids e quantidade).
+     * "Pular conflitos" e feito por quem chama, tirando da lista as datas que a previa marcou.
+     */
+    public List<Atendimento> agendarLote(ParametrosLote p, List<LocalDateTime> inicios) {
+        ctx.exigirSessao();
+        if (inicios == null || inicios.isEmpty()) throw new RegraNegocioException("Nenhuma sessão para agendar.");
+        if (inicios.size() > LOTE_MAXIMO)
+            throw new RegraNegocioException("No máximo " + LOTE_MAXIMO + " sessões por série.");
+        Base b = prepararBase(p);
+        String serieId = UUID.randomUUID().toString();
+        List<Atendimento> criados = new ArrayList<>();
         ctx.transacao(() -> {
-            ctx.atendimentos.inserir(a);
-            ctx.auditar("AGENDAMENTO", "atendimento", a.getId());
+            for (int i = 0; i < inicios.size(); i++) {
+                LocalDateTime inicio = inicios.get(i);
+                if (inicio == null) throw new RegraNegocioException("Informe data e hora da sessão " + (i + 1) + ".");
+                LocalDateTime fim = inicio.plusMinutes(b.duracao());
+                try {
+                    validarJanela(inicio);
+                    verificarConflitos(b.prof().getId(), b.prof().getNome(), b.paciente().getId(),
+                            b.paciente().getNome(), inicio, fim, null);
+                } catch (RegraNegocioException e) {
+                    throw new RegraNegocioException("Sessão " + (i + 1) + " (" + inicio.format(DATA_HORA_MSG) + "): "
+                            + e.getMessage() + " Nenhuma sessão foi salva.");
+                }
+                Atendimento a = new Atendimento();
+                a.setPacienteId(b.paciente().getId());
+                a.setProfissionalId(b.prof().getId());
+                a.setServicoId(b.servico().getId());
+                a.setInicio(inicio);
+                a.setFim(fim);
+                a.setModalidade(b.modalidade());
+                a.setObservacao(b.obs());
+                a.setSerieId(serieId);
+                a.setNumeroNaSerie(i + 1);
+                aplicarValor(a, b.paciente(), b.servico(), b.usarConvenio());
+                ctx.atendimentos.inserir(a);
+                criados.add(a);
+            }
+            // so ids e contagem: o log nao guarda nome de paciente
+            ctx.auditar("AGENDAMENTO_LOTE", "paciente", p.pacienteId(),
+                    "serie_id: " + serieId + "; quantidade: " + inicios.size());
         });
-        return a;
+        return criados;
+    }
+
+    /** Quantas sessoes futuras (agendadas/confirmadas) a serie deste atendimento ainda tem depois dele; 0 se avulso. */
+    public int contarProximosDaSerie(int atendimentoId) {
+        ctx.exigirSessao();
+        Atendimento a = buscarAtendimento(atendimentoId);
+        if (!a.isDeSerie()) return 0;
+        return ctx.atendimentos.listarProximosDaSerie(a.getSerieId(), a.getInicio()).size();
     }
 
     /** So agendado/confirmado: realizado, falta e cancelado ja contam (ou deixaram de contar) no financeiro. */
@@ -109,6 +271,7 @@ public class AgendaService {
     }
 
     private String motivoBloqueioTrocaPaciente(Atendimento a) {
+        if (a.isDeSerie()) return "Faz parte de uma série.";
         if (!podeEditar(a))
             return "Só atendimentos agendados ou confirmados permitem trocar o paciente (este está \""
                     + a.getStatus().rotulo() + "\").";
@@ -182,6 +345,45 @@ public class AgendaService {
                         "paciente_id: " + pacienteAnteriorId + " -> " + paciente.getId());
         });
         return a;
+    }
+
+    /**
+     * Edita uma sessao de serie com escopo. ESTA_E_PROXIMAS: as proximas (mesma serie, data futura, agendadas ou
+     * confirmadas) recebem os mesmos servico/duracao/modalidade/observacao e o horario deslocado pelo mesmo
+     * intervalo da sessao editada. Tudo em uma transacao; se uma falhar, a mensagem diz a data e hora e nada muda.
+     * Sem serie ou SO_ESTA = editar normal.
+     */
+    public Atendimento editar(int atendimentoId, Integer novoPacienteId, int servicoId, LocalDateTime inicio,
+                              int duracaoMin, Modalidade modalidade, String observacao, EscopoSerie escopo) {
+        ctx.exigirSessao();
+        Atendimento a = buscarAtendimento(atendimentoId);
+        if (escopo != EscopoSerie.ESTA_E_PROXIMAS || !a.isDeSerie())
+            return editar(atendimentoId, novoPacienteId, servicoId, inicio, duracaoMin, modalidade, observacao);
+        exigirEditavel(a);
+        if (inicio == null) throw new RegraNegocioException("Informe data e hora.");
+        Duration delta = Duration.between(a.getInicio(), inicio);
+        List<Atendimento> grupo = new ArrayList<>();
+        grupo.add(a);
+        grupo.addAll(ctx.atendimentos.listarProximosDaSerie(a.getSerieId(), a.getInicio()));
+        // deslocando para frente, a mais tardia vai primeiro (e ao contrario): uma sessao nunca cai no horario
+        // de outra da mesma serie que ainda nao saiu do lugar
+        if (!delta.isNegative()) Collections.reverse(grupo);
+        Atendimento[] editado = new Atendimento[1];
+        ctx.transacao(() -> {
+            for (Atendimento s : grupo) {
+                LocalDateTime novo = s.getInicio().plus(delta);
+                boolean atual = s.getId().equals(atendimentoId);
+                try {
+                    Atendimento r = editar(s.getId(), atual ? novoPacienteId : null, servicoId, novo, duracaoMin,
+                            modalidade, observacao);
+                    if (atual) editado[0] = r;
+                } catch (RegraNegocioException e) {
+                    throw new RegraNegocioException("Não foi possível alterar a sessão de " + novo.format(DATA_HORA_MSG)
+                            + ": " + e.getMessage() + " Nenhuma sessão da série foi alterada.");
+                }
+            }
+        });
+        return editado[0];
     }
 
     /** Antes e depois de data/hora e servico, sempre; o resto so se mudou. Nunca o nome do paciente. */
@@ -269,6 +471,36 @@ public class AgendaService {
                 ctx.atendimentos.atualizarStatus(atendimentoId, status);
             }
             ctx.auditar("STATUS_" + anterior.name() + "->" + status.name(), "atendimento", atendimentoId);
+        });
+    }
+
+    /**
+     * Cancelamento de sessao de serie com escopo. ESTA_E_PROXIMAS so vale para CANCELADO e atinge apenas as
+     * proximas agendadas/confirmadas (realizadas, faltas, canceladas e anteriores ficam como estao).
+     * Uma transacao: se alguma falhar, nenhuma muda.
+     */
+    public void alterarStatus(int atendimentoId, StatusAtendimento status, EscopoSerie escopo) {
+        ctx.exigirSessao();
+        Atendimento a = buscarAtendimento(atendimentoId);
+        if (escopo != EscopoSerie.ESTA_E_PROXIMAS || !a.isDeSerie()) {
+            alterarStatus(atendimentoId, status);
+            return;
+        }
+        if (status != StatusAtendimento.CANCELADO)
+            throw new RegraNegocioException("Só o cancelamento pode ser aplicado a toda a série.");
+        List<Atendimento> grupo = new ArrayList<>();
+        grupo.add(a);
+        grupo.addAll(ctx.atendimentos.listarProximosDaSerie(a.getSerieId(), a.getInicio()));
+        ctx.transacao(() -> {
+            for (Atendimento s : grupo) {
+                try {
+                    alterarStatus(s.getId(), status);
+                } catch (RegraNegocioException e) {
+                    throw new RegraNegocioException("Não foi possível cancelar a sessão de "
+                            + s.getInicio().format(DATA_HORA_MSG) + ": " + e.getMessage()
+                            + " Nenhuma sessão da série foi cancelada.");
+                }
+            }
         });
     }
 

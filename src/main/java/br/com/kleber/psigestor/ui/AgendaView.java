@@ -46,6 +46,7 @@ public class AgendaView {
         tabela.getColumns().add(Ui.col("Serviço", Atendimento::getServicoNome, 160));
         tabela.getColumns().add(Ui.col("Modalidade", a -> a.getModalidade().rotulo(), 95));
         tabela.getColumns().add(Ui.col("Status", a -> a.getStatus().rotulo(), 100));
+        tabela.getColumns().add(Ui.col("Série", Atendimento::rotuloSerie, 110));
         tabela.getColumns().add(Ui.col("Valor", a -> Ui.moeda(a.getValorCentavos()) + (a.getConvenioId() != null ? " (conv.)" : ""), 110));
         tabela.getColumns().add(Ui.col("Pago", a -> a.isPago() ? "Sim - " + Ui.formaPagamento(a.getFormaPagamento()) : "Não", 100));
         tabela.getColumns().add(Ui.col("Recibo", a -> a.isReciboEmitido() ? "Emitido" : "-", 80));
@@ -67,7 +68,7 @@ public class AgendaView {
                 botaoStatus("Confirmar", StatusAtendimento.CONFIRMADO),
                 botaoStatus("Realizado", StatusAtendimento.REALIZADO),
                 botaoStatus("Faltou", StatusAtendimento.FALTOU),
-                botaoStatus("Cancelar", StatusAtendimento.CANCELADO),
+                botao("Cancelar", this::cancelar),
                 botao("Registrar pagamento", this::pagamento),
                 botao("Recibo emitido", a -> {
                     if (Ui.confirmar("Confirma que o recibo deste atendimento já foi emitido no Receita Saúde?"))
@@ -87,6 +88,32 @@ public class AgendaView {
 
     private Button botaoStatus(String texto, StatusAtendimento status) {
         return botao(texto, a -> Ui.executar(() -> ctx.agenda.alterarStatus(a.getId(), status)));
+    }
+
+    /** Sessao de serie com proximas pendentes: pergunta "Só esta" ou "Esta e as próximas da série". */
+    private void cancelar(Atendimento a) {
+        AgendaService.EscopoSerie escopo = perguntarEscopo(a, "Cancelar");
+        if (escopo == null) return;   // desistiu
+        Ui.executar(() -> ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.CANCELADO, escopo));
+    }
+
+    /** null = a psicologa desistiu. Avulso, ou serie sem proximas pendentes, nao pergunta nada (so esta). */
+    private AgendaService.EscopoSerie perguntarEscopo(Atendimento a, String acao) {
+        if (!a.isDeSerie()) return AgendaService.EscopoSerie.SO_ESTA;
+        int[] proximas = {0};
+        if (!Ui.executar(() -> proximas[0] = ctx.agenda.contarProximosDaSerie(a.getId()))) return null;
+        if (proximas[0] == 0) return AgendaService.EscopoSerie.SO_ESTA;
+        ButtonType soEsta = new ButtonType("Só esta", ButtonBar.ButtonData.OK_DONE);
+        ButtonType comProximas = new ButtonType("Esta e as próximas da série", ButtonBar.ButtonData.OTHER);
+        Alert al = new Alert(Alert.AlertType.CONFIRMATION, null, soEsta, comProximas, ButtonType.CANCEL);
+        al.setTitle(acao);
+        al.setHeaderText(acao + " (" + a.rotuloSerie() + "): aplicar a quais sessões?");
+        al.setContentText("As próximas são as sessões futuras desta série ainda agendadas ou confirmadas ("
+                + proximas[0] + "). Sessões já realizadas não são alteradas.");
+        ButtonType r = al.showAndWait().orElse(ButtonType.CANCEL);
+        if (r == soEsta) return AgendaService.EscopoSerie.SO_ESTA;
+        if (r == comProximas) return AgendaService.EscopoSerie.ESTA_E_PROXIMAS;
+        return null;
     }
 
     private Button botao(String texto, java.util.function.Consumer<Atendimento> acao) {
@@ -164,6 +191,20 @@ public class AgendaView {
         observacao.setPromptText("Ex.: trazer guia do convênio");
         observacao.setPrefColumnCount(28);
         CheckBox convenio = new CheckBox("Cobrar pelo convênio do paciente");
+        // repeticao (so em agendamento novo): a primeira sessao e a data/hora escolhida acima
+        CheckBox repetir = new CheckBox("Repetir");
+        ComboBox<AgendaService.Frequencia> frequencia = new ComboBox<>();
+        frequencia.getItems().setAll(AgendaService.Frequencia.values());
+        frequencia.setValue(AgendaService.Frequencia.SEMANAL);
+        Ui.rotular(frequencia, AgendaService.Frequencia::rotulo);
+        Spinner<Integer> totalSessoes = new Spinner<>(AgendaService.LOTE_MINIMO, AgendaService.LOTE_MAXIMO, 10);
+        totalSessoes.setEditable(true);
+        totalSessoes.setPrefWidth(80);
+        frequencia.disableProperty().bind(repetir.selectedProperty().not());
+        totalSessoes.disableProperty().bind(repetir.selectedProperty().not());
+        javafx.scene.layout.HBox linhaRepetir = new javafx.scene.layout.HBox(8, repetir, frequencia,
+                new Label("Número total de sessões"), totalSessoes);
+        linhaRepetir.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
         GridPane g = Ui.formulario();
         if (edicao) {
@@ -200,6 +241,7 @@ public class AgendaView {
             g.add(avisoPaciente, 1, 9);
         } else {
             g.add(convenio, 1, 9);
+            g.add(linhaRepetir, 1, 10);
         }
 
         Dialog<ButtonType> d = new Dialog<>();
@@ -208,6 +250,14 @@ public class AgendaView {
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, ev -> {
+            // sessao de serie: pergunta o escopo antes de gravar (null = desistiu, o formulario continua aberto)
+            AgendaService.EscopoSerie escopo = AgendaService.EscopoSerie.SO_ESTA;
+            if (edicao && existente.isDeSerie()) {
+                escopo = perguntarEscopo(existente, "Editar");
+                if (escopo == null) { ev.consume(); return; }
+            }
+            AgendaService.EscopoSerie escopoFinal = escopo;
+            boolean[] salvou = {true};
             boolean ok = Ui.executar(() -> {
                 if (servico.getValue() == null || paciente.getValue() == null || (!edicao && prof.getValue() == null))
                     throw new RegraNegocioException(edicao ? "Escolha o paciente e o serviço." : "Preencha paciente, profissional e serviço.");
@@ -215,13 +265,21 @@ public class AgendaView {
                 int minutos = lerDuracao(duracao.getEditor().getText());
                 if (edicao) {
                     ctx.agenda.editar(existente.getId(), paciente.getValue().getId(), servico.getValue().getId(),
-                            inicio, minutos, modalidade.getValue(), observacao.getText());
+                            inicio, minutos, modalidade.getValue(), observacao.getText(), escopoFinal);
+                } else if (repetir.isSelected()) {
+                    List<LocalDateTime> datas = AgendaService.gerarDatas(inicio, frequencia.getValue(),
+                            lerTotalSessoes(totalSessoes.getEditor().getText()));
+                    var params = new AgendaService.ParametrosLote(paciente.getValue().getId(), prof.getValue().getId(),
+                            servico.getValue().getId(), minutos, modalidade.getValue(), convenio.isSelected(),
+                            observacao.getText());
+                    // a previa grava (ou nao) a serie inteira; sem salvar, o formulario continua aberto
+                    salvou[0] = new PreviaLoteDialog(ctx, params).mostrar(datas);
                 } else {
                     ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
                             inicio, minutos, modalidade.getValue(), convenio.isSelected(), observacao.getText());
                 }
             });
-            if (!ok) ev.consume();
+            if (!ok || !salvou[0]) ev.consume();
         });
         d.showAndWait();
         if (data.getValue() != null) dia.setValue(data.getValue());
@@ -234,6 +292,16 @@ public class AgendaView {
             return Integer.parseInt(texto == null ? "" : texto.trim());
         } catch (NumberFormatException e) {
             throw new RegraNegocioException("Duração inválida. Informe os minutos, ex.: 50");
+        }
+    }
+
+    /** Texto digitado no Spinner do total de sessoes. */
+    static int lerTotalSessoes(String texto) {
+        try {
+            return Integer.parseInt(texto == null ? "" : texto.trim());
+        } catch (NumberFormatException e) {
+            throw new RegraNegocioException("Número total de sessões inválido. Informe de "
+                    + AgendaService.LOTE_MINIMO + " a " + AgendaService.LOTE_MAXIMO + ".");
         }
     }
 

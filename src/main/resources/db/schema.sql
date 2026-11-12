@@ -87,11 +87,12 @@ CREATE TABLE IF NOT EXISTS atendimento (
     recibo_emitido   INTEGER NOT NULL DEFAULT 0,  -- marcado apos emitir no Receita Saude
     percentual_repasse_clinica REAL,          -- congelado ao virar REALIZADO/FALTOU (repasse nao muda no passado)
     observacao       TEXT,                    -- administrativa, em claro (nada clinico: isso vai no prontuario)
+    serie_id         TEXT,                    -- agendamento em lote: UUID da serie (null = avulso)
+    numero_na_serie  INTEGER,                 -- 1..n dentro da serie
     CHECK (fim > inicio)
 );
 
 CREATE INDEX IF NOT EXISTS idx_atendimento_inicio ON atendimento(inicio);
-
 -- Prontuario / registro documental: conteudo SEMPRE cifrado (AES-GCM)
 CREATE TABLE IF NOT EXISTS evolucao (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
