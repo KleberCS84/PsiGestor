@@ -65,10 +65,14 @@ public class AtendimentoDAO {
     public void atualizarAgendamento(Atendimento a) {
         executar("""
                 UPDATE atendimento SET paciente_id = ?, servico_id = ?, inicio = ?, fim = ?, modalidade = ?,
-                       valor = ?, observacao = ?
+                       valor = ?, observacao = ?,
+                       lembrete_enviado_em = CASE WHEN inicio <> ? OR paciente_id <> ? THEN NULL
+                                                  ELSE lembrete_enviado_em END
                  WHERE id = ? AND status IN ('AGENDADO','CONFIRMADO')""",
                 a.getPacienteId(), a.getServicoId(), a.getInicio().format(FMT), a.getFim().format(FMT),
-                a.getModalidade().name(), a.getValorCentavos(), a.getObservacao(), a.getId());
+                a.getModalidade().name(), a.getValorCentavos(), a.getObservacao(),
+                // remarcou ou trocou o paciente: o lembrete antigo nao vale mais (a direita do CASE ve a linha antiga)
+                a.getInicio().format(FMT), a.getPacienteId(), a.getId());
     }
 
     /** Sessoes que ja aconteceram (ou foram cobradas como falta): fazem parte do historico do paciente. */
@@ -134,6 +138,25 @@ public class AtendimentoDAO {
     public void atualizarStatus(int id, StatusAtendimento status, double percentualRepasseClinica) {
         executar("UPDATE atendimento SET status = ?, percentual_repasse_clinica = ? WHERE id = ?",
                 status.name(), percentualRepasseClinica, id);
+    }
+
+    /**
+     * Agendados/confirmados que comecam em (de, ate] e ainda nao tiveram lembrete ao paciente.
+     * De/ate no formato de minuto: sessao as 15:00 com agora 15:00:30 ja comecou e nao entra.
+     */
+    public List<Atendimento> listarParaLembrete(LocalDateTime de, LocalDateTime ate) {
+        try (PreparedStatement ps = con.prepareStatement(SELECT_BASE
+                + " WHERE a.status IN ('AGENDADO','CONFIRMADO') AND a.inicio > ? AND a.inicio <= ?"
+                + " AND a.lembrete_enviado_em IS NULL ORDER BY a.inicio")) {
+            ps.setString(1, de.format(FMT));
+            ps.setString(2, ate.format(FMT));
+            return listar(ps);
+        } catch (SQLException e) { throw new DaoException("Erro ao listar lembretes", e); }
+    }
+
+    /** Grava o instante do lembrete (texto ISO, hora local). */
+    public void marcarLembrete(int id, String quando) {
+        executar("UPDATE atendimento SET lembrete_enviado_em = ? WHERE id = ?", quando, id);
     }
 
     public void registrarPagamento(int id, String formaPagamento) {
@@ -237,6 +260,8 @@ public class AtendimentoDAO {
                 a.setSerieId(rs.getString("serie_id"));
                 a.setNumeroNaSerie(JdbcUtil.getIntOuNull(rs, "numero_na_serie"));
                 a.setTotalNaSerie(rs.getInt("total_serie"));
+                String lembrete = rs.getString("lembrete_enviado_em");
+                a.setLembreteEnviadoEm(lembrete == null ? null : LocalDateTime.parse(lembrete));
                 a.setPacienteNome(rs.getString("paciente_nome"));
                 a.setProfissionalNome(rs.getString("profissional_nome"));
                 a.setServicoNome(rs.getString("servico_nome"));

@@ -43,6 +43,12 @@ profissionais, serviços, convênios & TUSS, regras de repasse, aniversariantes,
 - Política de privacidade e termo/contrato terapêutico em papel ou digital.
 - Guardar os backups em local seguro e testar a restauração.
 
+**Lembretes de sessão (aviso à psicóloga e lembrete ao paciente):**
+- O controle de "já avisado" do **aviso à psicóloga** é **só em memória**: vale enquanto o app está aberto e a sessão logada; fechar o app ou entrar de novo zera o controle, e reabrir dentro da janela de aviso mostra o aviso mais uma vez. Nada disso é gravado no banco. Já o **lembrete ao paciente** é gravado (`atendimento.lembrete_enviado_em`), e remarcar a sessão ou trocar o paciente zera essa marca.
+- O envio do lembrete é pelo link `wa.me`: a psicóloga confere e confirma no WhatsApp. O sistema marca "lembrado" ao abrir o link, sem saber se a mensagem foi de fato enviada.
+- Só com consentimento `CONTATO_WHATSAPP_EMAIL` vigente. O texto padrão leva apenas nome do paciente, dia (hoje/amanhã), hora, modalidade e nome do profissional: nunca o motivo da sessão, o serviço, a observação do agendamento ou dado clínico. Quem personalizar o modelo (Preferências) é responsável por não incluir dado clínico.
+- A trilha de auditoria guarda só o id do atendimento e o canal (`LEMBRETE_ENVIADO`, `LEMBRETE_MARCADO`), sem nome, horário nem texto.
+
 ---
 
 ## 3. Conselho Federal de Psicologia (CFP)

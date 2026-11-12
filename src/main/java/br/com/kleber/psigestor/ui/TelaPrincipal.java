@@ -23,6 +23,7 @@ public class TelaPrincipal {
     private final List<Button> botoes = new ArrayList<>();
     private ProntuarioView prontuario;   // so quando o prontuario e a tela atual
     private Button botaoProntuario;      // atalho da Agenda marca este botao (nao depende da posicao no menu)
+    private Button botaoLembretes;       // leva o contador de lembretes pendentes
 
     public TelaPrincipal(Contexto ctx, Runnable aoSair) {
         this.ctx = ctx;
@@ -43,6 +44,7 @@ public class TelaPrincipal {
                 item("Painel", () -> new PainelView(ctx).criar()),
                 item("Agenda", () -> new AgendaView(ctx, this).criar()),
                 item("Consultar agenda", () -> new ConsultaAgendaView(ctx).criar()),
+                botaoLembretes = item("Lembretes pendentes", () -> new LembretesView(ctx, this::atualizarContador).criar()),
                 item("Pacientes", () -> new PacientesView(ctx).criar()),
                 botaoProntuario = item("Prontuário", () -> abrir(new ProntuarioView(ctx, null))),
                 item("Financeiro", () -> new FinanceiroView(ctx).criar()),
@@ -73,6 +75,22 @@ public class TelaPrincipal {
         return raiz;
     }
 
+    /**
+     * "Lembretes pendentes (N)" no menu. Chamado ao navegar e a cada checagem do aviso de sessao; falha aqui
+     * (sem sessao, banco) nunca vira dialogo: o contador so fica como estava.
+     */
+    public void atualizarContador() {
+        if (botaoLembretes == null) return;
+        try {
+            int n = ctx.lembretes.contarPendentes();
+            botaoLembretes.setText(n > 0 ? "Lembretes pendentes (" + n + ")" : "Lembretes pendentes");
+        } catch (br.com.kleber.psigestor.util.SessaoEncerradaException e) {
+            // o MonitorInatividade leva ao login
+        } catch (RuntimeException e) {
+            br.com.kleber.psigestor.util.LogTecnico.erro("TelaPrincipal.atualizarContador", e);
+        }
+    }
+
     private Button item(String texto, Supplier<Node> tela) {
         Button b = new Button(texto);
         b.getStyleClass().add("menu-item");
@@ -83,6 +101,7 @@ public class TelaPrincipal {
             prontuario = null;   // trocou de tela: o texto da tela anterior ja se perdeu
             // criar() de cada tela le o banco: erro ali vira aviso em vez de janela em branco
             Ui.executar(() -> mostrar(tela.get()));
+            atualizarContador();
         });
         botoes.add(b);
         return b;

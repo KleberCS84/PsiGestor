@@ -281,7 +281,7 @@ public class ConsultaAgendaView {
     }
 
     /** Navegador/cliente de e-mail fora da thread do JavaFX (AWT e JavaFX nao podem se travar). */
-    private static void abrirNoSistema(URI uri, boolean email) {
+    static void abrirNoSistema(URI uri, boolean email) {
         Thread t = new Thread(() -> {
             try {
                 if (!Desktop.isDesktopSupported()) throw new UnsupportedOperationException("Desktop indisponivel");

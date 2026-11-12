@@ -27,6 +27,9 @@ public class Atendimento {
     /** Somente leitura: quantas sessoes a serie tem (inclui canceladas); 0 = avulso. */
     private int totalNaSerie;
 
+    /** Quando o lembrete ao paciente foi enviado/marcado; null = ainda nao lembrado. */
+    private LocalDateTime lembreteEnviadoEm;
+
     // Campos apenas para exibicao (preenchidos por JOIN no DAO)
     private String pacienteNome;
     private String profissionalNome;
@@ -73,6 +76,8 @@ public class Atendimento {
     public void setNumeroNaSerie(Integer n) { this.numeroNaSerie = n; }
     public int getTotalNaSerie() { return totalNaSerie; }
     public void setTotalNaSerie(int t) { this.totalNaSerie = t; }
+    public LocalDateTime getLembreteEnviadoEm() { return lembreteEnviadoEm; }
+    public void setLembreteEnviadoEm(LocalDateTime t) { this.lembreteEnviadoEm = t; }
     public boolean isDeSerie() { return serieId != null; }
     /** "sessão 3 de 10"; vazio se nao faz parte de uma serie. */
     public String rotuloSerie() {

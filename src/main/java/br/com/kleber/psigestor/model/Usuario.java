@@ -21,6 +21,8 @@ public class Usuario {
     private String termosAceitosEm;
     private int minutosInatividade = 15;  // logout automatico; opcoes em AutenticacaoService.OPCOES_INATIVIDADE
     private String modeloMensagemAgenda;  // envio de horarios ao paciente; null = EnvioAgendaService.MODELO_PADRAO
+    private int minutosAvisoSessao = 60;  // aviso a psicologa X min antes da sessao; opcoes em AutenticacaoService
+    private String modeloLembrete;        // lembrete ao paciente; null = LembreteSessaoService.MODELO_PADRAO
 
     public Usuario() { }
 
@@ -73,6 +75,10 @@ public class Usuario {
     public void setMinutosInatividade(int minutos) { this.minutosInatividade = minutos; }
     public String getModeloMensagemAgenda() { return modeloMensagemAgenda; }
     public void setModeloMensagemAgenda(String modelo) { this.modeloMensagemAgenda = modelo; }
+    public int getMinutosAvisoSessao() { return minutosAvisoSessao; }
+    public void setMinutosAvisoSessao(int minutos) { this.minutosAvisoSessao = minutos; }
+    public String getModeloLembrete() { return modeloLembrete; }
+    public void setModeloLembrete(String modelo) { this.modeloLembrete = modelo; }
     public boolean temRecuperacao() {
         return dekRecuperacao != null && saltRecuperacao != null && iteracoesRecuperacao != null;
     }

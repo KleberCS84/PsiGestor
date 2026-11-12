@@ -19,6 +19,7 @@ public class PsiGestorApp extends Application {
     private Contexto ctx;
     private Stage palco;
     private MonitorInatividade inatividade;
+    private MonitorAvisoSessao avisoSessao;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -77,14 +78,24 @@ public class PsiGestorApp extends Application {
         // qualquer tecla/clique em qualquer janela do app conta como atividade (B-12)
         inatividade = new MonitorInatividade(ctx, palco, principal::temTextoNaoSalvo, () -> {
             inatividade = null;
+            pararAvisoSessao();   // sessao vencida: sem timer rodando sobre a tela de login
             mostrarLogin();
         });
         inatividade.iniciar();
+        // aviso X min antes das sessoes; para no logout e na inatividade
+        avisoSessao = new MonitorAvisoSessao(ctx, palco, principal::atualizarContador);
+        avisoSessao.iniciar();
     }
 
     private void pararInatividade() {
         if (inatividade != null) inatividade.parar();
         inatividade = null;
+        pararAvisoSessao();
+    }
+
+    private void pararAvisoSessao() {
+        if (avisoSessao != null) avisoSessao.parar();
+        avisoSessao = null;
     }
 
     private Scene trocar(Parent raiz) {

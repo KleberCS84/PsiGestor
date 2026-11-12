@@ -40,9 +40,11 @@ public class Database implements AutoCloseable {
      *  v11: modelo gravado igual ao padrao antigo vira null (passa ao padrao novo, com {periodo});
      *       modelo personalizado fica como esta
      *  v12: atendimento.serie_id + numero_na_serie (agendamento em lote; nulos = atendimento avulso)
+     *  v13: atendimento.lembrete_enviado_em (null = paciente nao lembrado), usuario.minutos_aviso_sessao
+     *       (existentes = 60) e usuario.modelo_lembrete (null = modelo padrao do lembrete)
      * Antes de migrar um banco com dados, uma copia fica em "psigestor.db.pre-v<VERSAO_ESQUEMA>".
      */
-    public static final int VERSAO_ESQUEMA = 12;
+    public static final int VERSAO_ESQUEMA = 13;
     /** Padrao do envio de horarios ate a v10 (mesmo texto de EnvioAgendaService.MODELO_PADRAO_ANTERIOR). */
     static final String MODELO_AGENDA_V10 = """
             Olá, {paciente}! Seguem seus próximos horários com {profissional}:
@@ -171,6 +173,12 @@ public class Database implements AutoCloseable {
                 adicionarColunaSeFaltar(st, "atendimento", "serie_id", "TEXT");
                 adicionarColunaSeFaltar(st, "atendimento", "numero_na_serie", "INTEGER");
                 st.execute("CREATE INDEX IF NOT EXISTS idx_atendimento_serie ON atendimento(serie_id)");
+            }
+            if (versao < 13) {
+                // sem CHECK em tabela existente (como na v2): AutenticacaoService valida o aviso
+                adicionarColunaSeFaltar(st, "atendimento", "lembrete_enviado_em", "TEXT");
+                adicionarColunaSeFaltar(st, "usuario", "minutos_aviso_sessao", "INTEGER NOT NULL DEFAULT 60");
+                adicionarColunaSeFaltar(st, "usuario", "modelo_lembrete", "TEXT");
             }
             try (ResultSet rs = st.executeQuery("PRAGMA foreign_key_check")) {
                 if (rs.next()) throw new SQLException("Migracao deixou referencia invalida em " + rs.getString(1));

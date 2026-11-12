@@ -289,6 +289,46 @@ public class AutenticacaoService {
         u.setModeloMensagemAgenda(novo);
     }
 
+    /** Antecedencia do aviso de sessao a psicologa, em minutos (padrao 60). */
+    public static final List<Integer> OPCOES_AVISO_SESSAO = List.of(15, 30, 60, 120);
+    public static final int PADRAO_AVISO_MIN = 60;
+
+    /** Preferencia do usuario logado; vale ja na sessao atual. Auditada com o valor anterior. */
+    public void alterarMinutosAviso(int minutos) {
+        Sessao s = ctx.exigirSessao();
+        if (!OPCOES_AVISO_SESSAO.contains(minutos))
+            throw new RegraNegocioException("Escolha 15, 30, 60 ou 120 minutos.");
+        Usuario u = s.usuario();
+        int anterior = u.getMinutosAvisoSessao();
+        if (anterior == minutos) return;
+        ctx.transacao(() -> {
+            ctx.usuarios.atualizarMinutosAviso(u.getId(), minutos);
+            ctx.auditar("PREFERENCIA_ALTERADA", "usuario", u.getId(), "aviso de sessao: " + anterior + " -> " + minutos);
+        });
+        u.setMinutosAvisoSessao(minutos);
+    }
+
+    /**
+     * Modelo do lembrete ao paciente do usuario logado ({paciente}, {quando}, {hora}, {modalidade}, {profissional}).
+     * Vazio volta ao padrao; nao ha marcador obrigatorio. Auditado sem o texto.
+     */
+    public void alterarModeloLembrete(String modelo) {
+        Sessao s = ctx.exigirSessao();
+        String m = Validadores.vazio(modelo) ? null : modelo.strip();
+        if (m != null && m.length() > LembreteSessaoService.MODELO_MAXIMO)
+            throw new RegraNegocioException("Modelo com no máximo " + LembreteSessaoService.MODELO_MAXIMO + " caracteres.");
+        if (m != null && m.equals(LembreteSessaoService.MODELO_PADRAO)) m = null;   // acompanha mudancas do padrao
+        Usuario u = s.usuario();
+        String novo = m;
+        if (java.util.Objects.equals(novo, u.getModeloLembrete())) return;
+        ctx.transacao(() -> {
+            ctx.usuarios.atualizarModeloLembrete(u.getId(), novo);
+            ctx.auditar("PREFERENCIA_ALTERADA", "usuario", u.getId(),
+                    novo == null ? "modelo de lembrete: padrao" : "modelo de lembrete");
+        });
+        u.setModeloLembrete(novo);
+    }
+
     /** Psicologo logado que ainda nao tem codigo de recuperacao (a tela oferece a cada login ate gerar). */
     public boolean precisaCodigoRecuperacao() {
         Sessao s = ctx.exigirSessao();

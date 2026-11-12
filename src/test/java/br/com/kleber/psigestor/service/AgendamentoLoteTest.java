@@ -296,7 +296,7 @@ class AgendamentoLoteTest {
             st.execute("PRAGMA user_version = 11");
         }
         Path copia = tmp.resolve("teste.db.pre-v" + Database.VERSAO_ESQUEMA);
-        assertEquals(12, Database.VERSAO_ESQUEMA);
+        assertTrue(Database.VERSAO_ESQUEMA >= 12);   // a v12 e a que este teste exercita; o nome da copia acompanha a atual
         assertFalse(Files.exists(copia));
 
         ctx = new Contexto(url());
@@ -306,7 +306,7 @@ class AgendamentoLoteTest {
 
         assertTrue(Files.exists(copia));
         assertEquals(11, userVersion(copia));                                  // estado de antes da migracao
-        assertEquals(12, userVersion(tmp.resolve("teste.db")));
+        assertEquals(Database.VERSAO_ESQUEMA, userVersion(tmp.resolve("teste.db")));   // sobe direto para a atual
         Atendimento depois = ctx.atendimentos.buscar(avulso.getId()).orElseThrow();   // dado preservado
         assertEquals(PRIMEIRA, depois.getInicio());
         assertNull(depois.getSerieId());

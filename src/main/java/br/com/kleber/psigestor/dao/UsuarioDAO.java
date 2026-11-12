@@ -137,6 +137,26 @@ public class UsuarioDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
     }
 
+    /** Preferencia do proprio usuario: minutos de antecedencia do aviso de sessao. */
+    public void atualizarMinutosAviso(int id, int minutos) {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE usuario SET minutos_aviso_sessao = ? WHERE id = ?")) {
+            ps.setInt(1, minutos);
+            ps.setInt(2, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
+    }
+
+    /** Modelo do lembrete ao paciente do proprio usuario; null volta ao padrao. */
+    public void atualizarModeloLembrete(int id, String modelo) {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE usuario SET modelo_lembrete = ? WHERE id = ?")) {
+            ps.setString(1, modelo);
+            ps.setInt(2, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Usuário não encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao atualizar preferencia", e); }
+    }
+
     public Optional<Usuario> buscarPorLogin(String login) {
         try (PreparedStatement ps = con.prepareStatement("SELECT * FROM usuario WHERE login = ?")) {
             ps.setString(1, login);
@@ -189,6 +209,8 @@ public class UsuarioDAO {
         u.setTermosAceitosEm(rs.getString("termos_aceitos_em"));
         u.setMinutosInatividade(rs.getInt("minutos_inatividade"));
         u.setModeloMensagemAgenda(rs.getString("modelo_mensagem_agenda"));
+        u.setMinutosAvisoSessao(rs.getInt("minutos_aviso_sessao"));
+        u.setModeloLembrete(rs.getString("modelo_lembrete"));
         return u;
     }
 }

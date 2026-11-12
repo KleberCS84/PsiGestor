@@ -53,6 +53,7 @@ public class Contexto implements AutoCloseable {
     public final BackupService backup;
     public final CadastroService cadastros;
     public final EnvioAgendaService envioAgenda;
+    public final LembreteSessaoService lembretes;
 
     public Contexto(String urlBanco) {
         db = new Database(urlBanco);
@@ -74,6 +75,7 @@ public class Contexto implements AutoCloseable {
         backup = new BackupService(this, db);
         cadastros = new CadastroService(this);
         envioAgenda = new EnvioAgendaService(this);
+        lembretes = new LembreteSessaoService(this);
     }
 
     public Sessao getSessao() { return sessao; }
@@ -83,6 +85,7 @@ public class Contexto implements AutoCloseable {
 
     void setSessao(Sessao sessao) {
         this.sessao = sessao;
+        lembretes.reiniciarAvisos();   // o que foi avisado na sessao anterior nao vale mais
         ultimaAtividade = agora();
         encerradaPorInatividade = false;
     }

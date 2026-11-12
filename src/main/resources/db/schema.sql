@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS usuario (
     termos_aceitos_em TEXT,                   -- yyyy-MM-ddTHH:mm:ss (hora local) do aceite
     minutos_inatividade INTEGER NOT NULL DEFAULT 15
                     CHECK (minutos_inatividade IN (5,10,15,30,60)),  -- logout automatico; sem "nunca" (M1)
-    modelo_mensagem_agenda TEXT               -- envio de horarios ao paciente; null = modelo padrao
+    modelo_mensagem_agenda TEXT,              -- envio de horarios ao paciente; null = modelo padrao
+    minutos_aviso_sessao INTEGER NOT NULL DEFAULT 60
+                    CHECK (minutos_aviso_sessao IN (15,30,60,120)),  -- aviso a psicologa antes da sessao
+    modelo_lembrete TEXT                      -- lembrete ao paciente; null = modelo padrao
 );
 
 CREATE TABLE IF NOT EXISTS convenio (
@@ -89,6 +92,7 @@ CREATE TABLE IF NOT EXISTS atendimento (
     observacao       TEXT,                    -- administrativa, em claro (nada clinico: isso vai no prontuario)
     serie_id         TEXT,                    -- agendamento em lote: UUID da serie (null = avulso)
     numero_na_serie  INTEGER,                 -- 1..n dentro da serie
+    lembrete_enviado_em TEXT,                 -- yyyy-MM-ddTHH:mm:ss (hora local); null = paciente ainda nao lembrado
     CHECK (fim > inicio)
 );
 

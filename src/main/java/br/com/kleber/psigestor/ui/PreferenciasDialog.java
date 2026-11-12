@@ -3,6 +3,7 @@ package br.com.kleber.psigestor.ui;
 import br.com.kleber.psigestor.service.AutenticacaoService;
 import br.com.kleber.psigestor.service.Contexto;
 import br.com.kleber.psigestor.service.EnvioAgendaService;
+import br.com.kleber.psigestor.service.LembreteSessaoService;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
@@ -56,19 +57,54 @@ public class PreferenciasDialog {
             avisos.getChildren().add(0, novo);
         }
 
+        // aviso a psicologa antes da sessao
+        ComboBox<Integer> avisoSessao = new ComboBox<>();
+        avisoSessao.getItems().setAll(AutenticacaoService.OPCOES_AVISO_SESSAO);
+        Ui.rotular(avisoSessao, PreferenciasDialog::rotuloAviso);
+        avisoSessao.setValue(ctx.usuarioLogado().getMinutosAvisoSessao());
+        g.addRow(1, new Label("Avisar antes da sessão"), avisoSessao);
+        Label legendaAviso = Ui.aviso("Com o PsiGestor aberto, um aviso aparece nesse tempo antes de cada sessão sua "
+                + "agendada ou confirmada. Cada sessão avisa uma vez.");
+        legendaAviso.setMaxWidth(420);
+
+        // lembrete ao paciente
+        String lembreteAtual = ctx.usuarioLogado().getModeloLembrete();
+        TextArea modeloLembrete = new TextArea(lembreteAtual == null ? LembreteSessaoService.MODELO_PADRAO : lembreteAtual);
+        modeloLembrete.setWrapText(true);
+        modeloLembrete.setPrefRowCount(4);
+        modeloLembrete.setPrefColumnCount(40);
+        Button padraoLembrete = new Button("Restaurar padrão");
+        padraoLembrete.setOnAction(e -> modeloLembrete.setText(LembreteSessaoService.MODELO_PADRAO));
+        Label legendaLembrete = Ui.aviso("Mensagem de lembrete (Lembretes pendentes). Use {paciente}, {quando} "
+                + "(\"hoje\" ou \"amanhã\"), {hora}, {modalidade} e {profissional}. Não escreva dados clínicos: "
+                + "a mensagem vai por WhatsApp.");
+        legendaLembrete.setMaxWidth(420);
+
         Dialog<ButtonType> d = new Dialog<>();
         d.setTitle("Preferências");
         d.setHeaderText(null);
-        d.getDialogPane().setContent(new VBox(8, g, aviso, new Separator(),
-                new Label("Mensagem de horários ao paciente"), modelo, Ui.linha(padrao), avisos));
+        d.setResizable(true);
+        VBox conteudo = new VBox(8, g, aviso, legendaAviso, new Separator(),
+                new Label("Mensagem de horários ao paciente"), modelo, Ui.linha(padrao), avisos, new Separator(),
+                new Label("Mensagem de lembrete ao paciente"), modeloLembrete, Ui.linha(padraoLembrete), legendaLembrete);
+        ScrollPane rolagem = new ScrollPane(conteudo);
+        rolagem.setFitToWidth(true);
+        rolagem.setPrefViewportHeight(520);
+        d.getDialogPane().setContent(rolagem);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
             if (!Ui.executar(() -> {
                 ctx.autenticacao.alterarModeloMensagem(modelo.getText());   // valida {lista} antes de gravar algo
+                ctx.autenticacao.alterarModeloLembrete(modeloLembrete.getText());
+                ctx.autenticacao.alterarMinutosAviso(avisoSessao.getValue());
                 ctx.autenticacao.alterarInatividade(inatividade.getValue());
             })) e.consume();
         });
         d.showAndWait();
+    }
+
+    static String rotuloAviso(int minutos) {
+        return minutos + " minutos" + (minutos == AutenticacaoService.PADRAO_AVISO_MIN ? " (padrão)" : "");
     }
 }
