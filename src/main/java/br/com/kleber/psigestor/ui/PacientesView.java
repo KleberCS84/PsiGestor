@@ -5,6 +5,7 @@ import br.com.kleber.psigestor.model.Convenio;
 import br.com.kleber.psigestor.model.Paciente;
 import br.com.kleber.psigestor.model.TipoConsentimento;
 import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.service.PacienteService;
 import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.control.*;
@@ -14,6 +15,8 @@ import javafx.stage.DirectoryChooser;
 
 import java.io.File;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public class PacientesView {
@@ -48,11 +51,11 @@ public class PacientesView {
         editar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::formulario));
         Button arquivar = new Button("Arquivar / Reativar");
         arquivar.setOnAction(e -> Ui.selecionado(tabela).ifPresent(p -> {
-            String msg = p.isArquivado() ? "Reativar " + p.getNome() + "?"
-                    : "Arquivar " + p.getNome() + "?\nO cadastro e o prontuário são mantidos (guarda mínima de 5 anos).";
-            if (Ui.confirmar(msg)) Ui.executar(() -> ctx.pacienteService.arquivar(p.getId(), !p.isArquivado()));
-            carregar();
+            if (p.isArquivado()) reativar(p);
+            else arquivar(p, null, "Arquivar " + p.getNome() + "?");
         }));
+        Button excluir = new Button("Excluir");
+        excluir.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::excluir));
         Button consent = new Button("Consentimentos");
         consent.setOnAction(e -> Ui.selecionado(tabela).ifPresent(this::consentimentos));
         Button exportar = new Button("Exportar dados (LGPD)");
@@ -65,9 +68,59 @@ public class PacientesView {
         return Ui.tela(Ui.titulo("Pacientes"),
                 Ui.linha(busca, arquivados, Ui.espaco(), novo),
                 tabela,
-                Ui.linha(editar, arquivar, consent, exportar, anonimizar),
-                Ui.aviso("Não há botão de excluir: o registro documental deve ser guardado por no mínimo 5 anos "
-                        + "(Res. CFP 01/2009). Use \"Arquivar\" para tirar o paciente das listas."));
+                Ui.linha(editar, arquivar, excluir, consent, exportar, anonimizar),
+                Ui.aviso("Só é possível excluir paciente sem sessão realizada, prontuário nem financeiro. Com histórico, "
+                        + "use \"Arquivar\": o prontuário deve ser guardado por no mínimo 5 anos (Res. CFP 01/2009)."));
+    }
+
+    private void reativar(Paciente p) {
+        if (Ui.confirmar("Reativar " + p.getNome() + "?")) Ui.executar(() -> ctx.pacienteService.arquivar(p.getId(), false));
+        carregar();
+    }
+
+    /**
+     * Arquiva (nao apaga). h null = consulta o historico aqui (so para saber dos agendamentos futuros).
+     * A pergunta inicial muda conforme quem chamou (botao Arquivar ou aviso da exclusao).
+     */
+    private void arquivar(Paciente p, PacienteService.HistoricoPaciente h, String pergunta) {
+        PacienteService.HistoricoPaciente[] historico = {h};
+        if (h == null && !Ui.executar(() -> historico[0] = ctx.pacienteService.historico(p.getId()))) return;
+        if (!Ui.confirmar(pergunta + "\n\nO cadastro e o prontuário são mantidos: o prontuário precisa ser guardado "
+                + "por no mínimo 5 anos (Res. CFP 01/2009). O paciente some das listas, buscas e agendamentos; "
+                + "para vê-lo ou reativá-lo, marque \"Mostrar arquivados\".")) return;
+        int futuros = historico[0].agendamentosFuturos();
+        boolean cancelar = futuros > 0 && Ui.confirmar(p.getNome() + " tem " + futuros + " agendamento(s) futuro(s).\n"
+                + "Cancelar esses agendamentos também?\n(Sim: cancela e arquiva. Não: arquiva e mantém os agendamentos.)");
+        Ui.executar(() -> ctx.pacienteService.arquivar(p.getId(), true, cancelar));
+        carregar();
+    }
+
+    /** Sem historico: exclusao definitiva. Com historico: explica e oferece arquivar. */
+    private void excluir(Paciente p) {
+        PacienteService.HistoricoPaciente[] historico = new PacienteService.HistoricoPaciente[1];
+        if (!Ui.executar(() -> historico[0] = ctx.pacienteService.historico(p.getId()))) return;
+        PacienteService.HistoricoPaciente h = historico[0];
+        if (h.temHistorico()) {
+            List<String> motivos = new ArrayList<>();
+            if (h.atendimentosRealizados() > 0) motivos.add(h.atendimentosRealizados() + " atendimento(s) realizado(s)");
+            if (h.registrosProntuario() > 0) motivos.add(h.registrosProntuario() + " registro(s) de prontuário");
+            if (h.lancamentosFinanceiros() > 0) motivos.add(h.lancamentosFinanceiros() + " lançamento(s) financeiro(s)");
+            if (p.isArquivado()) {
+                Ui.info(p.getNome() + " tem histórico (" + String.join(", ", motivos) + ") e não pode ser excluído.\n"
+                        + "O cadastro já está arquivado; o prontuário precisa ser guardado por no mínimo 5 anos "
+                        + "(Res. CFP 01/2009).");
+                return;
+            }
+            arquivar(p, h, p.getNome() + " tem histórico (" + String.join(", ", motivos) + ") e não pode ser excluído.\n"
+                    + "Deseja arquivar o cadastro?");
+            return;
+        }
+        String extra = h.agendamentosFuturos() > 0
+                ? "\nOs " + h.agendamentosFuturos() + " agendamento(s) futuro(s) e os consentimentos também serão apagados."
+                : "\nOs consentimentos dele também serão apagados.";
+        if (Ui.confirmar("Excluir permanentemente " + p.getNome() + "? Essa ação não pode ser desfeita." + extra))
+            Ui.executar(() -> ctx.pacienteService.excluir(p.getId()));
+        carregar();
     }
 
     /** Irreversivel: so prossegue se o nome do paciente for digitado exatamente. */

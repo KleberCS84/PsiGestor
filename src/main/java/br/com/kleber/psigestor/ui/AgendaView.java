@@ -112,20 +112,33 @@ public class AgendaView {
         if (Ui.executar(() -> AgendaService.exigirEditavel(a))) formulario(a);
     }
 
-    /** existente null = novo agendamento; senao, edicao (paciente e profissional nao mudam). */
+    /**
+     * existente null = novo agendamento; senao, edicao (o profissional nao muda; o paciente so muda se o
+     * service permitir: agendado/confirmado, sem prontuario e sem lancamento financeiro).
+     */
     private void formulario(Atendimento existente) {
         boolean edicao = existente != null;
         ComboBox<Paciente> paciente = new ComboBox<>();
         ComboBox<Usuario> prof = new ComboBox<>();
         ComboBox<Servico> servico = new ComboBox<>();
+        String[] motivoSemTroca = {null};   // preenchido na edicao quando o paciente nao pode ser trocado
         if (!Ui.executar(() -> {
+            paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
             if (!edicao) {
-                paciente.getItems().setAll(ctx.pacienteService.pesquisar("", false));
                 prof.getItems().setAll(ctx.cadastros.listarPsicologos());
                 if (ctx.usuarioLogado().isPsicologo()) prof.setValue(ctx.usuarioLogado());
+            } else {
+                // paciente atual arquivado nao esta na lista de ativos, mas precisa aparecer no campo
+                Paciente atual = ctx.pacienteService.buscar(existente.getPacienteId());
+                if (paciente.getItems().stream().noneMatch(p -> p.getId().equals(atual.getId())))
+                    paciente.getItems().add(0, atual);
+                paciente.getItems().stream().filter(p -> p.getId().equals(atual.getId())).findFirst()
+                        .ifPresent(paciente::setValue);
+                motivoSemTroca[0] = ctx.agenda.motivoBloqueioTrocaPaciente(existente.getId()).orElse(null);
             }
             servico.getItems().setAll(ctx.cadastros.listarServicos());
         })) return;
+        paciente.setDisable(motivoSemTroca[0] != null);
         if (edicao) {
             servico.getItems().stream().filter(s -> s.getId() == existente.getServicoId()).findFirst()
                     .ifPresent(servico::setValue);
@@ -154,7 +167,14 @@ public class AgendaView {
 
         GridPane g = Ui.formulario();
         if (edicao) {
-            g.addRow(0, new Label("Paciente"), new Label(existente.getPacienteNome()));
+            Node campoPaciente = paciente;
+            if (motivoSemTroca[0] != null) {
+                // campo desabilitado + o porque (regra vem do service)
+                Label porque = Ui.aviso("O paciente não pode ser trocado: " + motivoSemTroca[0]);
+                porque.setMaxWidth(380);
+                campoPaciente = new javafx.scene.layout.VBox(4, paciente, porque);
+            }
+            g.addRow(0, new Label("Paciente"), campoPaciente);
             g.addRow(1, new Label("Profissional"), new Label(existente.getProfissionalNome()));
         } else {
             g.addRow(0, new Label("Paciente"), paciente);
@@ -171,8 +191,11 @@ public class AgendaView {
         avisoObs.setMaxWidth(380);
         g.add(avisoObs, 1, 8);
         if (edicao) {
-            Label avisoPaciente = Ui.aviso("Para trocar o paciente ou o profissional, cancele e crie outro agendamento."
-                    + (existente.isPago() ? " Já pago: o valor não muda." : ""));
+            Label avisoPaciente = Ui.aviso("Para trocar o profissional, cancele e crie outro agendamento."
+                    + (existente.isPago() ? " Já pago: o valor não muda." : "")
+                    + (motivoSemTroca[0] == null
+                        ? " Ao trocar o paciente: valor e convênio não serão recalculados. Confira o lançamento."
+                        : ""));
             avisoPaciente.setMaxWidth(380);
             g.add(avisoPaciente, 1, 9);
         } else {
@@ -186,13 +209,13 @@ public class AgendaView {
         // valida antes de fechar: se der erro, a janela continua aberta
         d.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION, ev -> {
             boolean ok = Ui.executar(() -> {
-                if (servico.getValue() == null || (!edicao && (paciente.getValue() == null || prof.getValue() == null)))
-                    throw new RegraNegocioException(edicao ? "Escolha o serviço." : "Preencha paciente, profissional e serviço.");
+                if (servico.getValue() == null || paciente.getValue() == null || (!edicao && prof.getValue() == null))
+                    throw new RegraNegocioException(edicao ? "Escolha o paciente e o serviço." : "Preencha paciente, profissional e serviço.");
                 LocalDateTime inicio = montarInicio(data.getValue(), hora.getText());
                 int minutos = lerDuracao(duracao.getEditor().getText());
                 if (edicao) {
-                    ctx.agenda.editar(existente.getId(), servico.getValue().getId(), inicio, minutos,
-                            modalidade.getValue(), observacao.getText());
+                    ctx.agenda.editar(existente.getId(), paciente.getValue().getId(), servico.getValue().getId(),
+                            inicio, minutos, modalidade.getValue(), observacao.getText());
                 } else {
                     ctx.agenda.agendar(paciente.getValue().getId(), prof.getValue().getId(), servico.getValue().getId(),
                             inicio, minutos, modalidade.getValue(), convenio.isSelected(), observacao.getText());

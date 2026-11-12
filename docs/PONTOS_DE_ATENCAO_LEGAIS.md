@@ -51,7 +51,7 @@ profissionais, serviços, convênios & TUSS, regras de repasse, aniversariantes,
 |---|---|---|
 | Código de Ética Profissional (Res. CFP 10/2005), art. 9º | **Sigilo** | Secretária não acessa o prontuário; outro psicólogo da clínica também não lê registros que não são seus (chave pessoal) |
 | Código de Ética, art. 8º | Atendimento de **menor** depende de autorização de responsável | Cadastro de menor de 18 exige responsável legal |
-| Res. CFP 01/2009 (registro documental) | Registro **obrigatório**, guarda por **no mínimo 5 anos** | Não existe excluir; triggers no banco bloqueiam UPDATE/DELETE do prontuário; correção = **retificação** |
+| Res. CFP 01/2009 (registro documental) | Registro **obrigatório**, guarda por **no mínimo 5 anos** | Paciente com histórico não pode ser excluído (só arquivado); triggers no banco bloqueiam UPDATE/DELETE do prontuário; correção = **retificação** |
 | Res. CFP 06/2019 (documentos escritos) | Laudos, relatórios, declarações seguem modelo próprio | **Fora do MVP** — gerar documento psicológico exige seguir a estrutura da resolução |
 | Res. CFP 11/2018 (serviços por TIC) | Atendimento online exige **cadastro no e-Psi** | Modalidade ONLINE só agenda com consentimento registrado; o sistema **não faz videochamada** |
 | SATEPSI / Res. CFP 31/2022 (avaliação psicológica) | Testes psicológicos são de **uso privativo** e têm direitos autorais das editoras | **Não incluído**: nada de aplicação/correção de testes. ⚠️ Atenção ao reaproveitar o projeto de preenchimento de instrumentos: não distribua itens, gabaritos ou normas de testes comerciais |

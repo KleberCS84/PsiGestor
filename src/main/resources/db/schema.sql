@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS paciente (
     responsavel_legal   TEXT,                 -- obrigatorio para menor de 18 (validado no service)
     convenio_id         INTEGER REFERENCES convenio(id) ON DELETE SET NULL,
     numero_carteirinha  TEXT,
-    arquivado           INTEGER NOT NULL DEFAULT 0,   -- nunca apagamos: arquivamos
+    arquivado           INTEGER NOT NULL DEFAULT 0,   -- com historico (prontuario/financeiro) so arquiva; sem historico pode ser excluido
     criado_em           TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     anonimizado_em      TEXT                  -- preenchido = anonimizado (LGPD): nao volta a ser editado
 );

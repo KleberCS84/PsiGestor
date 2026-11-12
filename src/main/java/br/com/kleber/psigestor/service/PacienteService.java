@@ -3,6 +3,7 @@ package br.com.kleber.psigestor.service;
 import br.com.kleber.psigestor.model.Atendimento;
 import br.com.kleber.psigestor.model.Consentimento;
 import br.com.kleber.psigestor.model.Paciente;
+import br.com.kleber.psigestor.model.StatusAtendimento;
 import br.com.kleber.psigestor.model.TipoConsentimento;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import br.com.kleber.psigestor.util.Validadores;
@@ -104,16 +105,68 @@ public class PacienteService {
     }
 
     /**
-     * Nao existe "excluir paciente": o registro documental deve ser guardado por no minimo
-     * 5 anos (Res. CFP 01/2009). Arquivar tira o paciente das listas do dia a dia.
+     * O que o paciente ja tem de historico. Realizado/falta, prontuario e lancamento financeiro
+     * (pagamento ou recibo) impedem a exclusao definitiva; agendamentos futuros nao (so contam
+     * para a pergunta "cancelar?" ao arquivar). O financeiro e derivado do atendimento (nao ha tabela propria).
+     */
+    public record HistoricoPaciente(int atendimentosRealizados, int registrosProntuario,
+                                    int lancamentosFinanceiros, int agendamentosFuturos) {
+        public boolean temHistorico() {
+            return atendimentosRealizados > 0 || registrosProntuario > 0 || lancamentosFinanceiros > 0;
+        }
+    }
+
+    public HistoricoPaciente historico(int pacienteId) {
+        buscar(pacienteId);   // sessao + mensagem clara para id inexistente
+        return new HistoricoPaciente(
+                ctx.atendimentos.contarRealizados(pacienteId),
+                ctx.evolucoes.contarPorPaciente(pacienteId),
+                ctx.atendimentos.contarComLancamentoFinanceiro(pacienteId),
+                ctx.atendimentos.listarFuturosAtivos(pacienteId, ctx.agoraLocal()).size());
+    }
+
+    /**
+     * Exclusao definitiva, so de cadastro SEM historico (nenhuma sessao realizada, nenhum registro de
+     * prontuario, nenhum lancamento financeiro). Apaga junto os agendamentos (inclusive cancelados) e os
+     * consentimentos do paciente. Com historico, o registro documental precisa ser guardado por no minimo
+     * 5 anos (Res. CFP 01/2009): so arquivar. O log guarda apenas o id.
+     */
+    public void excluir(int pacienteId) {
+        ctx.exigirSessao();
+        buscar(pacienteId);
+        ctx.transacao(() -> {
+            // conferido dentro da transacao: nada muda entre a checagem e o DELETE
+            if (historico(pacienteId).temHistorico())
+                throw new RegraNegocioException("Este paciente tem histórico (sessão realizada, prontuário ou "
+                        + "financeiro) e não pode ser excluído: o prontuário precisa ser guardado por no mínimo "
+                        + GUARDA_MINIMA_ANOS + " anos (Res. CFP 01/2009). Use \"Arquivar\".");
+            ctx.consentimentos.excluirDoPaciente(pacienteId);
+            ctx.atendimentos.excluirSemHistoricoDoPaciente(pacienteId);
+            ctx.pacientes.excluir(pacienteId);
+            ctx.auditar("EXCLUSAO_PACIENTE", "paciente", pacienteId);
+        });
+    }
+
+    /**
+     * Pacientes com historico nao se excluem: o registro documental deve ser guardado por no minimo
+     * 5 anos (Res. CFP 01/2009). Arquivar tira o paciente das listas do dia a dia; reativar traz de volta.
      */
     public void arquivar(int pacienteId, boolean arquivado) {
+        arquivar(pacienteId, arquivado, false);
+    }
+
+    /** cancelarFuturos: ao arquivar, cancela os agendados/confirmados que ainda vao acontecer. */
+    public void arquivar(int pacienteId, boolean arquivado, boolean cancelarFuturos) {
         ctx.exigirSessao();
         Paciente p = buscar(pacienteId);
         if (p.isAnonimizado()) throw new RegraNegocioException(ANONIMIZADO);
         p.setArquivado(arquivado);
         ctx.transacao(() -> {
             ctx.pacientes.salvar(p);
+            if (arquivado && cancelarFuturos) {
+                for (Atendimento a : ctx.atendimentos.listarFuturosAtivos(pacienteId, ctx.agoraLocal()))
+                    ctx.agenda.alterarStatus(a.getId(), StatusAtendimento.CANCELADO);   // audita cada um
+            }
             ctx.auditar(arquivado ? "ARQUIVAMENTO_PACIENTE" : "REATIVACAO_PACIENTE", "paciente", pacienteId);
         });
     }

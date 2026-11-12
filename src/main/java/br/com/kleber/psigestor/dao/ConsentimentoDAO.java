@@ -27,6 +27,14 @@ public class ConsentimentoDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao registrar consentimento", e); }
     }
 
+    /** So na exclusao definitiva do paciente (sem historico): o consentimento nao tem mais a quem se referir. */
+    public int excluirDoPaciente(int pacienteId) {
+        try (PreparedStatement ps = con.prepareStatement("DELETE FROM consentimento WHERE paciente_id = ?")) {
+            ps.setInt(1, pacienteId);
+            return ps.executeUpdate();
+        } catch (SQLException e) { throw new DaoException("Erro ao excluir consentimentos", e); }
+    }
+
     public List<Consentimento> historico(int pacienteId) {
         List<Consentimento> lista = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement(

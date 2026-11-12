@@ -54,15 +54,59 @@ public class AtendimentoDAO {
     }
 
     /**
-     * Grava a edicao de um agendamento (paciente, profissional, status e pagamento nao mudam).
+     * Grava a edicao de um agendamento (paciente, servico, horario, modalidade, valor e observacao;
+     * profissional, status e pagamento nao mudam). A regra de quando o paciente pode trocar fica no service.
      * O filtro de status repete a regra do service: entre a leitura e o UPDATE nada vira REALIZADO.
      */
     public void atualizarAgendamento(Atendimento a) {
         executar("""
-                UPDATE atendimento SET servico_id = ?, inicio = ?, fim = ?, modalidade = ?, valor = ?, observacao = ?
+                UPDATE atendimento SET paciente_id = ?, servico_id = ?, inicio = ?, fim = ?, modalidade = ?,
+                       valor = ?, observacao = ?
                  WHERE id = ? AND status IN ('AGENDADO','CONFIRMADO')""",
-                a.getServicoId(), a.getInicio().format(FMT), a.getFim().format(FMT), a.getModalidade().name(),
-                a.getValorCentavos(), a.getObservacao(), a.getId());
+                a.getPacienteId(), a.getServicoId(), a.getInicio().format(FMT), a.getFim().format(FMT),
+                a.getModalidade().name(), a.getValorCentavos(), a.getObservacao(), a.getId());
+    }
+
+    /** Sessoes que ja aconteceram (ou foram cobradas como falta): fazem parte do historico do paciente. */
+    public int contarRealizados(int pacienteId) {
+        return contarEscalar("SELECT COUNT(*) FROM atendimento WHERE paciente_id = ? AND status IN ('REALIZADO','FALTOU')",
+                pacienteId);
+    }
+
+    /** Atendimentos com pagamento ou recibo registrado (o financeiro e derivado do atendimento). */
+    public int contarComLancamentoFinanceiro(int pacienteId) {
+        return contarEscalar("SELECT COUNT(*) FROM atendimento WHERE paciente_id = ? "
+                + "AND (pago = 1 OR recibo_emitido = 1 OR forma_pagamento IS NOT NULL)", pacienteId);
+    }
+
+    /** Agendados/confirmados que comecam a partir de "desde": os que ainda vao acontecer. */
+    public List<Atendimento> listarFuturosAtivos(int pacienteId, LocalDateTime desde) {
+        try (PreparedStatement ps = con.prepareStatement(SELECT_BASE
+                + " WHERE a.paciente_id = ? AND a.status IN ('AGENDADO','CONFIRMADO') AND a.inicio >= ? ORDER BY a.inicio")) {
+            ps.setInt(1, pacienteId);
+            ps.setString(2, desde.format(FMT));
+            return listar(ps);
+        } catch (SQLException e) { throw new DaoException("Erro ao listar agendamentos futuros", e); }
+    }
+
+    /**
+     * Apaga os atendimentos do paciente que nao deixam historico: nem realizados/falta, nem pagamento ou recibo.
+     * So e chamado na exclusao definitiva, depois de o service confirmar que nao ha prontuario nem financeiro.
+     */
+    public int excluirSemHistoricoDoPaciente(int pacienteId) {
+        try (PreparedStatement ps = con.prepareStatement("""
+                DELETE FROM atendimento WHERE paciente_id = ? AND status NOT IN ('REALIZADO','FALTOU')
+                   AND pago = 0 AND recibo_emitido = 0 AND forma_pagamento IS NULL""")) {
+            ps.setInt(1, pacienteId);
+            return ps.executeUpdate();
+        } catch (SQLException e) { throw new DaoException("Erro ao excluir agendamentos do paciente", e); }
+    }
+
+    private int contarEscalar(String sql, int pacienteId) {
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, pacienteId);
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
+        } catch (SQLException e) { throw new DaoException("Erro ao consultar atendimentos do paciente", e); }
     }
 
     public void atualizarStatus(int id, StatusAtendimento status) {

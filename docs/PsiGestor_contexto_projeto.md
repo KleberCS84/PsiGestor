@@ -57,7 +57,7 @@ Painel · Agenda · Pacientes · Prontuário · Financeiro · Serviços & Convê
 - **Pacientes:**
   - Nome é obrigatório; CPF é opcional, mas se informado precisa ser válido e não repetido.
   - Menor de 18 anos exige responsável legal.
-  - Não existe excluir, só **arquivar** (guarda mínima de 5 anos).
+  - Excluir só vale para paciente **sem histórico** (sem sessão realizada, prontuário ou financeiro); com histórico, só **arquivar** (guarda mínima de 5 anos).
   - Exportação dos dados do paciente em TXT (direito do titular pela LGPD).
 - **Consentimentos:** guardados como histórico (nunca sobrescreve); vale o registro mais recente.
 - **Financeiro:** faturado, recebido, a receber, faltas, recibos pendentes e repasse por profissional (% retido pela clínica).

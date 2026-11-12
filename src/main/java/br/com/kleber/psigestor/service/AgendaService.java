@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public class AgendaService {
     static final int DIAS_RETROATIVOS = 30;
@@ -90,26 +91,70 @@ public class AgendaService {
                     + "\" não pode ser editado: já afeta o financeiro. Só agendados e confirmados podem mudar.");
     }
 
-    /**
-     * Edita data/hora, duracao, servico, modalidade e observacao. Paciente e profissional nao mudam
-     * (para isso, cancelar e agendar outro). Revalida tudo como em agendar, ignorando o proprio horario.
-     * Servico trocado recalcula o valor particular, exceto se ja pago; convenio continua com o valor dele.
-     */
+    /** Edita sem trocar o paciente (ver a versao com novoPacienteId). */
     public Atendimento editar(int atendimentoId, int servicoId, LocalDateTime inicio, int duracaoMin,
                               Modalidade modalidade, String observacao) {
+        return editar(atendimentoId, null, servicoId, inicio, duracaoMin, modalidade, observacao);
+    }
+
+    /**
+     * Motivo pelo qual o paciente deste atendimento NAO pode ser trocado, ou vazio se pode.
+     * So troca quem esta agendado/confirmado e ainda nao tem registro de prontuario nem lancamento
+     * financeiro (pagamento ou recibo): depois disso o atendimento e historico do paciente original.
+     * A tela usa o texto para explicar o campo desabilitado; editar() aplica a mesma regra.
+     */
+    public Optional<String> motivoBloqueioTrocaPaciente(int atendimentoId) {
         ctx.exigirSessao();
-        Atendimento a = ctx.atendimentos.buscar(atendimentoId)
+        return Optional.ofNullable(motivoBloqueioTrocaPaciente(buscarAtendimento(atendimentoId)));
+    }
+
+    private String motivoBloqueioTrocaPaciente(Atendimento a) {
+        if (!podeEditar(a))
+            return "Só atendimentos agendados ou confirmados permitem trocar o paciente (este está \""
+                    + a.getStatus().rotulo() + "\").";
+        if (ctx.evolucoes.existePorAtendimento(a.getId()))
+            return "Já existe registro de prontuário ligado a este atendimento.";
+        if (a.isPago() || a.isReciboEmitido() || a.getFormaPagamento() != null)
+            return "Já existe lançamento financeiro (pagamento ou recibo) ligado a este atendimento.";
+        return null;
+    }
+
+    private Atendimento buscarAtendimento(int atendimentoId) {
+        return ctx.atendimentos.buscar(atendimentoId)
                 .orElseThrow(() -> new RegraNegocioException("Atendimento não encontrado."));
+    }
+
+    /**
+     * Edita paciente, data/hora, duracao, servico, modalidade e observacao. O profissional nao muda
+     * (para isso, cancelar e agendar outro). novoPacienteId null (ou igual ao atual) = paciente mantido;
+     * a troca segue motivoBloqueioTrocaPaciente e, se o atendimento e por convenio, o novo paciente precisa
+     * ter o mesmo convenio. Revalida tudo como em agendar (inclusive conflitos de horario do NOVO paciente),
+     * ignorando o proprio horario. Servico trocado recalcula o valor particular, exceto se ja pago;
+     * convenio continua com o valor dele. Troca de paciente grava EDICAO_ATENDIMENTO_PACIENTE (so ids).
+     */
+    public Atendimento editar(int atendimentoId, Integer novoPacienteId, int servicoId, LocalDateTime inicio,
+                              int duracaoMin, Modalidade modalidade, String observacao) {
+        ctx.exigirSessao();
+        Atendimento a = buscarAtendimento(atendimentoId);
         exigirEditavel(a);
         if (modalidade == null) throw new RegraNegocioException("Informe a modalidade.");
         validarJanela(inicio);
-        Paciente paciente = pacienteAgendavel(a.getPacienteId());
+        int pacienteAnteriorId = a.getPacienteId();
+        boolean trocouPaciente = novoPacienteId != null && novoPacienteId != pacienteAnteriorId;
+        if (trocouPaciente) {
+            String motivo = motivoBloqueioTrocaPaciente(a);
+            if (motivo != null) throw new RegraNegocioException("Não é possível trocar o paciente. " + motivo);
+        }
+        Paciente paciente = pacienteAgendavel(trocouPaciente ? novoPacienteId : pacienteAnteriorId);
+        if (trocouPaciente && a.getConvenioId() != null && !a.getConvenioId().equals(paciente.getConvenioId()))
+            throw new RegraNegocioException("Não é possível trocar o paciente. Este atendimento é cobrado pelo "
+                    + "convênio e o novo paciente não tem o mesmo convênio.");
         Servico servico = buscarServico(servicoId);
         String obs = validarObservacao(observacao);
         LocalDateTime fim = inicio.plusMinutes(validarDuracao(duracaoMin));
-        verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), a.getPacienteId(), paciente.getNome(),
+        verificarConflitos(a.getProfissionalId(), a.getProfissionalNome(), paciente.getId(), paciente.getNome(),
                 inicio, fim, a.getId());
-        exigirConsentimentoOnline(a.getPacienteId(), modalidade);
+        exigirConsentimentoOnline(paciente.getId(), modalidade);
 
         String detalhe = detalheAlteracao(a, servico, inicio, fim, modalidade, obs);
         boolean trocouServico = a.getServicoId() != servicoId;
@@ -119,6 +164,8 @@ public class AgendaService {
             if (anterior != a.getValorCentavos())
                 detalhe += "; valor: " + anterior + " -> " + a.getValorCentavos() + " centavos";
         }
+        a.setPacienteId(paciente.getId());
+        a.setPacienteNome(paciente.getNome());
         a.setServicoId(servicoId);
         a.setServicoNome(servico.getNome());
         a.setInicio(inicio);
@@ -129,6 +176,10 @@ public class AgendaService {
         ctx.transacao(() -> {
             ctx.atendimentos.atualizarAgendamento(a);
             ctx.auditar("ALTERACAO_ATENDIMENTO", "atendimento", a.getId(), detalheFinal);
+            // so ids: o log nao guarda nome de paciente
+            if (trocouPaciente)
+                ctx.auditar("EDICAO_ATENDIMENTO_PACIENTE", "atendimento", a.getId(),
+                        "paciente_id: " + pacienteAnteriorId + " -> " + paciente.getId());
         });
         return a;
     }

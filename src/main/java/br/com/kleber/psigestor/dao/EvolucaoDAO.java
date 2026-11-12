@@ -31,6 +31,23 @@ public class EvolucaoDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao gravar registro de prontuario", e); }
     }
 
+    /** Registros de prontuario do paciente (inclusive os sem atendimento e as retificacoes). */
+    public int contarPorPaciente(int pacienteId) {
+        return contar("SELECT COUNT(*) FROM evolucao WHERE paciente_id = ?", pacienteId);
+    }
+
+    /** Ha registro de prontuario ligado a esse atendimento? */
+    public boolean existePorAtendimento(int atendimentoId) {
+        return contar("SELECT COUNT(*) FROM evolucao WHERE atendimento_id = ?", atendimentoId) > 0;
+    }
+
+    private int contar(String sql, int id) {
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
+        } catch (SQLException e) { throw new DaoException("Erro ao consultar prontuario", e); }
+    }
+
     public List<LinhaCifrada> listarPorPaciente(int pacienteId) {
         List<LinhaCifrada> lista = new ArrayList<>();
         try (PreparedStatement ps = con.prepareStatement(

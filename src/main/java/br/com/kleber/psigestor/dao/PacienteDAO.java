@@ -98,6 +98,17 @@ public class PacienteDAO {
         } catch (SQLException e) { throw new DaoException("Erro ao anonimizar paciente", e); }
     }
 
+    /**
+     * Exclusao definitiva. As FKs sao RESTRICT: se sobrou atendimento, consentimento ou prontuario
+     * apontando para o paciente, o banco recusa (rede de seguranca; o service ja confere antes).
+     */
+    public void excluir(int id) {
+        try (PreparedStatement ps = con.prepareStatement("DELETE FROM paciente WHERE id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() != 1) throw new RegraNegocioException("Paciente não encontrado.");
+        } catch (SQLException e) { throw new DaoException("Erro ao excluir paciente", e); }
+    }
+
     /** Busca por parte do nome (LIKE), incluindo ou nao os arquivados. */
     public List<Paciente> pesquisar(String trechoNome, boolean incluirArquivados) {
         String sql = "SELECT * FROM paciente WHERE nome LIKE ? ESCAPE '\\' "
