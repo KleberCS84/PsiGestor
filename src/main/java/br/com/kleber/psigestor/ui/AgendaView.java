@@ -3,6 +3,7 @@ package br.com.kleber.psigestor.ui;
 import br.com.kleber.psigestor.model.*;
 import br.com.kleber.psigestor.service.AgendaService;
 import br.com.kleber.psigestor.service.Contexto;
+import br.com.kleber.psigestor.util.CalendarioFeriados;
 import br.com.kleber.psigestor.util.RegraNegocioException;
 import javafx.scene.Node;
 import javafx.scene.control.*;
@@ -263,6 +264,16 @@ public class AgendaView {
                     throw new RegraNegocioException(edicao ? "Escolha o paciente e o serviço." : "Preencha paciente, profissional e serviço.");
                 LocalDateTime inicio = montarInicio(data.getValue(), hora.getText());
                 int minutos = lerDuracao(duracao.getEditor().getText());
+                // alerta de fim de semana/feriado (so informa): sessao unica, e edicao apenas se a data mudou.
+                // No lote o alerta vem na previa.
+                boolean dataMudou = !edicao || !inicio.toLocalDate().equals(existente.getInicio().toLocalDate());
+                if (dataMudou && !(!edicao && repetir.isSelected())) {
+                    List<String> motivos = CalendarioFeriados.alertas(inicio.toLocalDate());
+                    if (!motivos.isEmpty() && !Ui.confirmar(String.join("\n", motivos) + "\n\nAgendar mesmo assim?")) {
+                        salvou[0] = false;
+                        return;
+                    }
+                }
                 if (edicao) {
                     ctx.agenda.editar(existente.getId(), paciente.getValue().getId(), servico.getValue().getId(),
                             inicio, minutos, modalidade.getValue(), observacao.getText(), escopoFinal);
