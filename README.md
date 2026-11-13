@@ -132,6 +132,16 @@ mvn clean test     # testes JUnit 5 (maven-surefire-plugin 3.5.2), com SQLite em
 
 Arquivos `*.db` estão no `.gitignore`.
 
+## Novidades da 0.2.0
+
+- **Trocar paciente** no agendamento, sem precisar cancelar e refazer.
+- **Excluir e arquivar paciente.**
+- **Agendamento em lote** (semanal ou quinzenal), com série "N de M" e opção de cancelar esta e as próximas.
+- **Lembretes de sessão:** aviso à psicóloga e painel "Lembretes pendentes", com link `wa.me` para o paciente. O envio é feito e confirmado manualmente.
+- **Alerta de fim de semana e feriado nacional** ao agendar.
+
+Limitações conhecidas desta versão: feriados municipais e estaduais não entram no alerta, e o controle de "já avisado" dos lembretes fica só em memória (é perdido ao fechar o programa).
+
 ## Limitações conhecidas
 
 Itens avaliados e mantidos em aberto de propósito (detalhes em [docs/REVISAO.md](docs/REVISAO.md), seção 4):
