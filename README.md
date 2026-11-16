@@ -1,5 +1,5 @@
 # PsiGestor
-✅ 218 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto ([REVISAO.md](docs/REVISAO.md), [REVISAO_FINAL.md](docs/REVISAO_FINAL.md))
+✅ 294 testes automatizados · 2 revisões de código independentes · 0 achados críticos ou altos em aberto ([REVISAO.md](docs/REVISAO.md), [REVISAO_FINAL.md](docs/REVISAO_FINAL.md))
 
 ⬇️ **[Baixar a versão de piloto (Windows)](https://github.com/KleberCS84/PsiGestor/releases/latest)** · uso apenas com dados fictícios
 
